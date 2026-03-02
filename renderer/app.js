@@ -170,6 +170,7 @@ const rotorConfig = document.getElementById('rotor-config');
 const setRotorHost = document.getElementById('set-rotor-host');
 const setRotorPort = document.getElementById('set-rotor-port');
 const setVerboseLog = document.getElementById('set-verbose-log');
+const setLightIcon = document.getElementById('set-light-icon');
 const setEnableSplitView = document.getElementById('set-enable-split-view');
 const splitOrientationConfig = document.getElementById('split-orientation-config');
 const continentFilterEl = document.getElementById('continent-filter');
@@ -1542,8 +1543,7 @@ function updateLogbookPortConfig() {
     logbookInstructions.classList.add('hidden');
     logbookPortConfig.classList.remove('hidden');
     const currentPort = parseInt(setLogbookPort.value, 10);
-    const isDefaultPort = !currentPort || Object.values(LOGBOOK_DEFAULTS).some(d => d.port === currentPort);
-    if (isDefaultPort) setLogbookPort.value = defaults.port;
+    if (!currentPort || currentPort === defaults.port) setLogbookPort.value = defaults.port;
     logbookHelp.textContent = defaults.help;
   } else {
     logbookInstructions.classList.add('hidden');
@@ -4524,6 +4524,7 @@ async function openSettingsDialog() {
   rotorConfig.classList.toggle('hidden', !s.enableRotor);
   setEnableSplit.checked = s.enableSplit === true;
   setVerboseLog.checked = s.verboseLog === true;
+  setLightIcon.checked = s.lightIcon === true;
   setEnablePota.checked = s.enablePota !== false;
   setEnableSota.checked = s.enableSota === true;
   setEnableWwff.checked = s.enableWwff === true;
@@ -4698,6 +4699,7 @@ settingsSave.addEventListener('click', async () => {
   const rotorPortVal = parseInt(setRotorPort.value, 10) || 12040;
   const enableSplitEnabled = setEnableSplit.checked;
   const verboseLogEnabled = setVerboseLog.checked;
+  const lightIconEnabled = setLightIcon.checked;
   const disableAutoUpdate = setDisableAutoUpdate.checked;
   const telemetryEnabled = setEnableTelemetry.checked;
   const lightModeEnabled = setLightMode.checked;
@@ -4788,6 +4790,7 @@ settingsSave.addEventListener('click', async () => {
     rotorPort: rotorPortVal,
     enableSplit: enableSplitEnabled,
     verboseLog: verboseLogEnabled,
+    lightIcon: lightIconEnabled,
     potaParksPath: potaParksPath,
     hideWorkedParks: hideWorkedParksEnabled,
     enableLogging: loggingEnabled,

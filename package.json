@@ -30,6 +30,7 @@
       "lib/**/*",
       "renderer/**/*",
       "assets/icon.png",
+      "assets/icon-light.png",
       "assets/cty.dat",
       "node_modules/**/*",
       "!node_modules/electron/**/*",

@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, Menu, dialog, Notification, screen } = require('electron');
+const { app, BrowserWindow, ipcMain, Menu, dialog, Notification, screen, nativeImage } = require('electron');
 const path = require('path');
 const fs = require('fs');
 
@@ -1902,6 +1902,20 @@ function isOnScreen(saved) {
   });
 }
 
+function getIconPath() {
+  const variant = settings.lightIcon ? 'icon-light.png' : 'icon.png';
+  return path.join(__dirname, 'assets', variant);
+}
+
+function applyIconToAllWindows() {
+  const iconPath = getIconPath();
+  const img = nativeImage.createFromPath(iconPath);
+  const allWins = BrowserWindow.getAllWindows();
+  for (const w of allWins) {
+    if (!w.isDestroyed()) w.setIcon(img);
+  }
+}
+
 function createWindow() {
   // Create window at default size first, then restore bounds via setBounds()
   // so Electron resolves DPI scaling for the correct display
@@ -1911,7 +1925,7 @@ function createWindow() {
     height: 700,
     title: `POTACAT - v${require('./package.json').version}`,
     ...(isMac ? { titleBarStyle: 'hiddenInset' } : { frame: false }),
-    icon: path.join(__dirname, 'assets', 'icon.png'),
+    icon: getIconPath(),
     show: false,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
@@ -2759,7 +2773,7 @@ app.whenReady().then(() => {
       title: 'POTACAT Map',
       show: false,
       ...(isMac ? { titleBarStyle: 'hiddenInset' } : { frame: false }),
-      icon: path.join(__dirname, 'assets', 'icon.png'),
+      icon: getIconPath(),
       webPreferences: {
         preload: path.join(__dirname, 'preload-popout.js'),
         contextIsolation: true,
@@ -2870,7 +2884,7 @@ app.whenReady().then(() => {
       title: 'POTACAT Logbook',
       show: false,
       ...(isMac ? { titleBarStyle: 'hiddenInset' } : { frame: false }),
-      icon: path.join(__dirname, 'assets', 'icon.png'),
+      icon: getIconPath(),
       webPreferences: {
         preload: path.join(__dirname, 'preload-qso-popout.js'),
         contextIsolation: true,
@@ -2948,7 +2962,7 @@ app.whenReady().then(() => {
       title: 'POTACAT Spots',
       show: false,
       ...(isMac ? { titleBarStyle: 'hiddenInset' } : { frame: false }),
-      icon: path.join(__dirname, 'assets', 'icon.png'),
+      icon: getIconPath(),
       webPreferences: {
         preload: path.join(__dirname, 'preload-spots-popout.js'),
         contextIsolation: true,
@@ -3037,7 +3051,7 @@ app.whenReady().then(() => {
       title: 'Activation Map',
       show: false,
       ...(isMac ? { titleBarStyle: 'hiddenInset' } : { frame: false }),
-      icon: path.join(__dirname, 'assets', 'icon.png'),
+      icon: getIconPath(),
       webPreferences: {
         preload: path.join(__dirname, 'preload-actmap-popout.js'),
         contextIsolation: true,
@@ -3324,6 +3338,7 @@ app.whenReady().then(() => {
       (has('wsjtxPort') && newSettings.wsjtxPort !== settings.wsjtxPort);
 
     const pskrChanged = has('enablePskr') && newSettings.enablePskr !== settings.enablePskr;
+    const iconChanged = has('lightIcon') && newSettings.lightIcon !== settings.lightIcon;
 
     const cwKeyerChanged = (has('enableCwKeyer') && newSettings.enableCwKeyer !== settings.enableCwKeyer) ||
       (has('cwKeyerMode') && newSettings.cwKeyerMode !== settings.cwKeyerMode) ||
@@ -3420,6 +3435,9 @@ app.whenReady().then(() => {
     if (potaParksPathChanged) {
       loadWorkedParks();
     }
+
+    // Swap app icon on all windows if setting changed
+    if (iconChanged) applyIconToAllWindows();
 
     // Reconfigure QRZ client if credentials changed
     if (newSettings.enableQrz) {
