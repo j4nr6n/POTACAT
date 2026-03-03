@@ -4224,6 +4224,20 @@ logSaveBtn.addEventListener('click', async () => {
   const origText = logSaveBtn.textContent;
   logSaveBtn.textContent = 'Saving\u2026';
   try {
+    // For POTA/WWFF spots, look up the park's actual location for state/grid/country
+    let parkLocState = '', parkLocGrid = '', parkLocCountry = '';
+    if (sig === 'POTA' && potaRef) {
+      try {
+        const parkData = await window.api.getPark(potaRef);
+        if (parkData) {
+          // locationDesc is e.g. "US-ME", "VE-ON" — extract state portion after dash
+          const locParts = (parkData.locationDesc || '').split('-');
+          if (locParts.length >= 2) parkLocState = locParts.slice(1).join('-');
+          parkLocGrid = parkData.grid || '';
+        }
+      } catch {}
+    }
+
     let lastResult = null;
     for (let ci = 0; ci < callsigns.length; ci++) {
       const cs = callsigns[ci];
@@ -4245,9 +4259,11 @@ logSaveBtn.addEventListener('click', async () => {
         sotaRef,
         wwffRef,
         name: logQrzInfo ? [cleanQrzName(logQrzInfo.nickname) || cleanQrzName(logQrzInfo.fname), cleanQrzName(logQrzInfo.name)].filter(Boolean).join(' ') : '',
-        state: logQrzInfo ? logQrzInfo.state : '',
-        county: logQrzInfo && logQrzInfo.state && logQrzInfo.county ? `${logQrzInfo.state},${logQrzInfo.county}` : '',
-        gridsquare: logQrzInfo ? logQrzInfo.grid : '',
+        // For park/summit activators, use park location instead of QRZ home QTH
+        // For POTA activators, use the park's state/grid instead of QRZ home QTH
+        state: parkLocState || (!sig && logQrzInfo ? logQrzInfo.state : ''),
+        county: !parkLocState && !sig && logQrzInfo && logQrzInfo.state && logQrzInfo.county ? `${logQrzInfo.state},${logQrzInfo.county}` : '',
+        gridsquare: parkLocGrid || (logQrzInfo ? logQrzInfo.grid : ''),
         country: logQrzInfo ? logQrzInfo.country : '',
         comment: commentBase,
         // Only respot on the first callsign
