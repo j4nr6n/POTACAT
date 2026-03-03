@@ -2715,6 +2715,95 @@ function migrateRigSettings(s) {
   }
 }
 
+// --- Tune radio (shared by IPC and protocol handler) ---
+let _lastTuneFreq = 0;
+let _lastTuneTime = 0;
+
+function tuneRadio(freqKhz, mode, brng) {
+  let freqHz = Math.round(parseFloat(freqKhz) * 1000); // kHz → Hz
+  const now = Date.now();
+  if (freqHz === _lastTuneFreq && now - _lastTuneTime < 300) return;
+  _lastTuneFreq = freqHz;
+  _lastTuneTime = now;
+  if ((mode === 'CW') && settings.cwXit) {
+    freqHz += settings.cwXit;
+  }
+
+  const m = (mode || '').toUpperCase();
+  let filterWidth = 0;
+  if (m === 'CW') {
+    filterWidth = settings.cwFilterWidth || 0;
+  } else if (m === 'SSB' || m === 'USB' || m === 'LSB') {
+    filterWidth = settings.ssbFilterWidth || 0;
+  } else if (m === 'FT8' || m === 'FT4' || m === 'DIGU' || m === 'DIGL') {
+    filterWidth = settings.digitalFilterWidth || 0;
+  }
+
+  if (settings.enableRotor && brng != null && !isNaN(brng)) {
+    sendRotorBearing(Math.round(brng));
+  }
+
+  if (settings.enableWsjtx && (!cat || !cat.connected)) {
+    if (smartSdr && smartSdr.connected && settings.catTarget && settings.catTarget.type === 'tcp') {
+      const sliceIndex = (settings.catTarget.port || 5002) - 5002;
+      const freqMhz = freqHz / 1e6;
+      const flexMode = (mode === 'FT8' || mode === 'FT4' || mode === 'JT65' || mode === 'JT9' || mode === 'WSPR')
+        ? 'DIGU' : (mode === 'CW' ? 'CW' : (mode === 'SSB' || mode === 'USB' ? 'USB' : (mode === 'LSB' ? 'LSB' : null)));
+      sendCatLog(`tune via SmartSDR API: slice=${sliceIndex} freq=${freqMhz.toFixed(6)}MHz mode=${mode}→${flexMode} filter=${filterWidth}`);
+      smartSdr.tuneSlice(sliceIndex, freqMhz, flexMode, filterWidth);
+    }
+    return;
+  }
+
+  if (!cat || !cat.connected) return;
+  sendCatLog(`tune: freq=${freqKhz}kHz → ${freqHz}Hz mode=${mode} split=${!!settings.enableSplit} filter=${filterWidth}`);
+  cat.tune(freqHz, mode, { split: settings.enableSplit, filterWidth });
+}
+
+// --- potacat:// protocol handler ---
+if (!app.isDefaultProtocolClient('potacat')) {
+  app.setAsDefaultProtocolClient('potacat');
+}
+
+function handleProtocolUrl(url) {
+  // potacat://tune/14074/USB → tune to 14074 kHz USB
+  try {
+    const parsed = new URL(url);
+    if (parsed.hostname === 'tune' || parsed.pathname.startsWith('//tune')) {
+      const parts = parsed.pathname.replace(/^\/+/, '').split('/');
+      const segments = parts.filter(p => p && p.toLowerCase() !== 'tune');
+      const freqKhz = segments[0];
+      const mode = (segments[1] || '').toUpperCase();
+      if (freqKhz && !isNaN(parseFloat(freqKhz))) {
+        tuneRadio(parseFloat(freqKhz), mode);
+      }
+    }
+  } catch (err) {
+    console.error('Failed to parse protocol URL:', url, err);
+  }
+}
+
+// Single instance lock — second launch passes URL to running instance
+const gotTheLock = app.requestSingleInstanceLock();
+if (!gotTheLock) {
+  app.quit();
+} else {
+  app.on('second-instance', (_e, argv) => {
+    const url = argv.find(a => a.startsWith('potacat://'));
+    if (url) handleProtocolUrl(url);
+    if (win && !win.isDestroyed()) {
+      if (win.isMinimized()) win.restore();
+      win.focus();
+    }
+  });
+}
+
+// macOS: handle protocol URL when app is already running
+app.on('open-url', (event, url) => {
+  event.preventDefault();
+  handleProtocolUrl(url);
+});
+
 app.whenReady().then(() => {
   Menu.setApplicationMenu(null);
   settings = loadSettings();
@@ -2739,6 +2828,13 @@ app.whenReady().then(() => {
   if (settings.enableCwKeyer) connectKeyer();
   if (settings.enableWsjtx) connectWsjtx();
   if (settings.enablePskr) connectPskr();
+
+  // Cold start: check if app was launched via potacat:// URL
+  const protocolUrl = process.argv.find(a => a.startsWith('potacat://'));
+  if (protocolUrl) {
+    setTimeout(() => handleProtocolUrl(protocolUrl), 2000);
+  }
+
   // Configure QRZ client from saved credentials
   if (settings.enableQrz && settings.qrzUsername && settings.qrzPassword) {
     qrz.configure(settings.qrzUsername, settings.qrzPassword);
@@ -3223,54 +3319,9 @@ app.whenReady().then(() => {
     }
   });
 
-  let _lastTuneFreq = 0;
-  let _lastTuneTime = 0;
   ipcMain.on('tune', (_e, { frequency, mode, bearing }) => {
     markUserActive();
-    let freqHz = Math.round(parseFloat(frequency) * 1000); // kHz → Hz
-    // Debounce: skip duplicate tune to same frequency within 300ms
-    const now = Date.now();
-    if (freqHz === _lastTuneFreq && now - _lastTuneTime < 300) return;
-    _lastTuneFreq = freqHz;
-    _lastTuneTime = now;
-    // Apply CW XIT offset — shift tune frequency so TX lands offset from the activator
-    if ((mode === 'CW') && settings.cwXit) {
-      freqHz += settings.cwXit;
-    }
-
-    // Look up per-mode filter width from settings
-    const m = (mode || '').toUpperCase();
-    let filterWidth = 0;
-    if (m === 'CW') {
-      filterWidth = settings.cwFilterWidth || 0;
-    } else if (m === 'SSB' || m === 'USB' || m === 'LSB') {
-      filterWidth = settings.ssbFilterWidth || 0;
-    } else if (m === 'FT8' || m === 'FT4' || m === 'DIGU' || m === 'DIGL') {
-      filterWidth = settings.digitalFilterWidth || 0;
-    }
-
-    // Send bearing to PstRotator via UDP
-    if (settings.enableRotor && bearing != null && !isNaN(bearing)) {
-      sendRotorBearing(Math.round(bearing));
-    }
-
-    // If WSJT-X is active and CAT is released, try to tune via SmartSDR API
-    if (settings.enableWsjtx && (!cat || !cat.connected)) {
-      if (smartSdr && smartSdr.connected && settings.catTarget && settings.catTarget.type === 'tcp') {
-        const sliceIndex = (settings.catTarget.port || 5002) - 5002;
-        const freqMhz = freqHz / 1e6;
-        // Map common modes to FlexRadio mode strings
-        const flexMode = (mode === 'FT8' || mode === 'FT4' || mode === 'JT65' || mode === 'JT9' || mode === 'WSPR')
-          ? 'DIGU' : (mode === 'CW' ? 'CW' : (mode === 'SSB' || mode === 'USB' ? 'USB' : (mode === 'LSB' ? 'LSB' : null)));
-        sendCatLog(`tune via SmartSDR API: slice=${sliceIndex} freq=${freqMhz.toFixed(6)}MHz mode=${mode}→${flexMode} filter=${filterWidth}`);
-        smartSdr.tuneSlice(sliceIndex, freqMhz, flexMode, filterWidth);
-      }
-      return;
-    }
-
-    if (!cat || !cat.connected) return;
-    sendCatLog(`tune IPC: freq=${frequency}kHz → ${freqHz}Hz mode=${mode} split=${!!settings.enableSplit} filter=${filterWidth} cat.connected=${cat ? cat.connected : 'no cat'}`);
-    cat.tune(freqHz, mode, { split: settings.enableSplit, filterWidth });
+    tuneRadio(frequency, mode, bearing);
   });
 
   ipcMain.on('refresh', () => { markUserActive(); refreshSpots(); });

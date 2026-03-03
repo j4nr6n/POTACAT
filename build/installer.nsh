@@ -26,5 +26,16 @@
     Goto +2
     !insertmacro _LogWrite "customInstall: WARNING - POTACAT.exe NOT FOUND after install"
 
+  ; Register potacat:// protocol handler
+  WriteRegStr HKCU "Software\Classes\potacat" "" "URL:POTACAT Protocol"
+  WriteRegStr HKCU "Software\Classes\potacat" "URL Protocol" ""
+  WriteRegStr HKCU "Software\Classes\potacat\shell\open\command" "" '"$INSTDIR\POTACAT.exe" "%1"'
+  !insertmacro _LogWrite "customInstall: Registered potacat:// protocol handler"
+
   !insertmacro _LogWrite "customInstall: Complete"
+!macroend
+
+!macro customUnInstall
+  ; Remove potacat:// protocol handler
+  DeleteRegKey HKCU "Software\Classes\potacat"
 !macroend

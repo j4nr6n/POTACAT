@@ -68,6 +68,12 @@
       ],
       "category": "Utility"
     },
+    "protocols": [
+      {
+        "name": "POTACAT Protocol",
+        "schemes": ["potacat"]
+      }
+    ],
     "extraResources": [
       {
         "from": "assets/hamlib",
