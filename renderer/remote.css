@@ -109,6 +109,32 @@ html, body {
   height: 100%;
 }
 
+/* --- Rig Selector --- */
+#rig-bar {
+  display: flex;
+  align-items: center;
+  padding: 6px 12px;
+  background: var(--bg-header);
+  border-bottom: 1px solid #333;
+  flex-shrink: 0;
+}
+
+#rig-select {
+  width: 100%;
+  padding: 6px 8px;
+  background: var(--bg-card);
+  color: var(--text);
+  border: 1px solid #444;
+  border-radius: 6px;
+  font-size: 14px;
+  -webkit-appearance: none;
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%23888' fill='none' stroke-width='1.5'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+  padding-right: 28px;
+}
+
 /* --- Status Bar --- */
 #status-bar {
   display: flex;

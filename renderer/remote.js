@@ -52,6 +52,8 @@
   const logSaveBtn = document.getElementById('log-save');
   const logCancelBtn = document.getElementById('log-cancel');
   const logToast = document.getElementById('log-toast');
+  const rigBar = document.getElementById('rig-bar');
+  const rigSelect = document.getElementById('rig-select');
   let currentFreqKhz = 0; // track current freq for pre-fill
   let currentMode = '';    // track current mode
   let tunedFreqKhz = ''; // last tuned spot freq for highlight
@@ -164,6 +166,10 @@
             if (chip) chip.classList.toggle('active', !!msg.data[settingKey]);
           }
         }
+        break;
+
+      case 'rigs':
+        updateRigSelect(msg.data || [], msg.activeRigId);
         break;
 
       case 'log-ok':
@@ -708,6 +714,24 @@
       localStorage.setItem('echocat-welcome-dismissed', '1');
     }
     welcomeOverlay.classList.add('hidden');
+  });
+
+  // --- Rig Selector ---
+  function updateRigSelect(rigs, activeRigId) {
+    if (!rigs || rigs.length < 2) {
+      rigBar.classList.add('hidden');
+      return;
+    }
+    rigSelect.innerHTML = rigs.map(r =>
+      `<option value="${esc(r.id)}"${r.id === activeRigId ? ' selected' : ''}>${esc(r.name || 'Unnamed Rig')}</option>`
+    ).join('');
+    rigBar.classList.remove('hidden');
+  }
+
+  rigSelect.addEventListener('change', () => {
+    const rigId = rigSelect.value;
+    if (!rigId || !ws || ws.readyState !== WebSocket.OPEN) return;
+    ws.send(JSON.stringify({ type: 'switch-rig', rigId }));
   });
 
   // Auto-connect on page load — if server doesn't require a token,

@@ -1363,6 +1363,9 @@ function connectRemote() {
       llota: settings.enableLlota === true,
       cluster: settings.enableCluster === true,
     });
+    // Send rig list so phone can switch rigs
+    const rigs = (settings.rigs || []).map(r => ({ id: r.id, name: r.name }));
+    remoteServer.sendRigsToClient(rigs, settings.activeRigId || null);
     if (win && !win.isDestroyed()) {
       win.webContents.send('remote-status', { connected: true });
     }
@@ -1396,6 +1399,30 @@ function connectRemote() {
     // Refresh spots with new sources
     refreshSpots();
     console.log('[Echo CAT] Sources updated:', newSettings);
+  });
+
+  remoteServer.on('switch-rig', ({ rigId }) => {
+    const rig = (settings.rigs || []).find(r => r.id === rigId);
+    if (!rig) return;
+    settings.activeRigId = rig.id;
+    settings.catTarget = rig.catTarget;
+    settings.remoteAudioInput = rig.remoteAudioInput || '';
+    settings.remoteAudioOutput = rig.remoteAudioOutput || '';
+    saveSettings(settings);
+    if (!settings.enableWsjtx) connectCat();
+    connectSmartSdr();
+    // Restart audio bridge with new rig's audio devices
+    if (remoteAudioWin && !remoteAudioWin.isDestroyed()) {
+      startRemoteAudio();
+    }
+    // Sync desktop UI
+    if (win && !win.isDestroyed()) {
+      win.webContents.send('reload-prefs');
+    }
+    // Confirm back to phone
+    const rigs = (settings.rigs || []).map(r => ({ id: r.id, name: r.name }));
+    remoteServer.sendRigsToClient(rigs, rig.id);
+    console.log('[Echo CAT] Switched rig to:', rig.name);
   });
 
   remoteServer.on('log-qso', async (data) => {
