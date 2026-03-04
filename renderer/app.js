@@ -253,7 +253,10 @@ const connBar = document.getElementById('settings-conn-status');
 const connCluster = document.getElementById('conn-cluster');
 const connRbn = document.getElementById('conn-rbn');
 const connPskr = document.getElementById('conn-pskr');
+const connRemote = document.getElementById('conn-remote');
 let clusterConnected = false;
+let enableRemote = false;
+let remoteConnected = false;
 let clusterNodeStatuses = []; // [{id, name, host, connected}, ...]
 let currentClusterNodes = []; // live node list for settings UI
 
@@ -361,6 +364,20 @@ const setCwSidetonePitch = document.getElementById('set-cw-sidetone-pitch');
 const setCwSidetoneVolume = document.getElementById('set-cw-sidetone-volume');
 const cwSidetoneVolumeLabel = document.getElementById('cw-sidetone-volume-label');
 const cwKeyerStatusEl = document.getElementById('cw-keyer-status');
+// ECHO CAT
+const setEnableRemote = document.getElementById('set-enable-remote');
+const remoteConfig = document.getElementById('remote-config');
+const setRemotePort = document.getElementById('set-remote-port');
+const setRemoteRequireToken = document.getElementById('set-remote-require-token');
+const remoteTokenRow = document.getElementById('remote-token-row');
+const setRemoteToken = document.getElementById('set-remote-token');
+const remoteRegenToken = document.getElementById('remote-regen-token');
+const rigRemoteAudioInput = document.getElementById('rig-remote-audio-input');
+const rigRemoteAudioOutput = document.getElementById('rig-remote-audio-output');
+const remoteAudioSummary = document.getElementById('remote-audio-summary');
+const setRemotePttTimeout = document.getElementById('set-remote-ptt-timeout');
+const remoteUrlDisplay = document.getElementById('remote-url-display');
+const remoteTxIndicator = document.getElementById('remote-tx-indicator');
 const logDialog = document.getElementById('log-dialog');
 const logCallsign = document.getElementById('log-callsign');
 const logOpName = document.getElementById('log-op-name');
@@ -499,7 +516,12 @@ async function openCatPopover(anchor) {
     rigEl.appendChild(info);
     rigEl.addEventListener('click', async () => {
       window.api.connectCat(rig.catTarget);
-      await window.api.saveSettings({ activeRigId: rig.id, catTarget: rig.catTarget });
+      await window.api.saveSettings({
+        activeRigId: rig.id,
+        catTarget: rig.catTarget,
+        remoteAudioInput: rig.remoteAudioInput || '',
+        remoteAudioOutput: rig.remoteAudioOutput || '',
+      });
       activeRigName = rig.name || '';
       closeCatPopover();
     });
@@ -1020,12 +1042,14 @@ async function openRigEditor(mode, rigId) {
     if (rig) {
       setRigName.value = rig.name || '';
       await populateRadioSection(rig.catTarget);
+      await populateRigAudioDevices(rig.remoteAudioInput, rig.remoteAudioOutput);
     }
   } else {
     rigEditorTitle.textContent = 'Add Rig';
     setRigName.value = '';
     setRadioType('flex');
     updateRadioSubPanels();
+    await populateRigAudioDevices('', '');
   }
 
   rigEditor.classList.remove('hidden');
@@ -1061,17 +1085,24 @@ rigSaveBtn.addEventListener('click', async () => {
   const name = setRigName.value.trim() || 'Unnamed Rig';
   const catTarget = buildCatTargetFromForm();
 
+  const rigAudioIn = rigRemoteAudioInput.value || '';
+  const rigAudioOut = rigRemoteAudioOutput.value || '';
+
   if (rigEditorMode === 'edit' && editingRigId) {
     const rig = currentRigs.find(r => r.id === editingRigId);
     if (rig) {
       rig.name = name;
       rig.catTarget = catTarget;
+      rig.remoteAudioInput = rigAudioIn;
+      rig.remoteAudioOutput = rigAudioOut;
     }
   } else {
     const newRig = {
       id: 'rig_' + Date.now(),
       name,
       catTarget,
+      remoteAudioInput: rigAudioIn,
+      remoteAudioOutput: rigAudioOut,
     };
     currentRigs.push(newRig);
   }
@@ -1198,7 +1229,7 @@ function updateWsjtxStatusVisibility() {
 }
 
 function updateSettingsConnBar() {
-  const anyVisible = enableCluster || enableRbn || enablePskr;
+  const anyVisible = enableCluster || enableRbn || enablePskr || enableRemote;
   connBar.classList.toggle('hidden', !anyVisible);
   connCluster.classList.toggle('hidden', !enableCluster);
   connCluster.classList.toggle('connected', clusterConnected);
@@ -1212,6 +1243,8 @@ function updateSettingsConnBar() {
   connRbn.classList.toggle('connected', rbnConnected);
   connPskr.classList.toggle('hidden', !enablePskr);
   connPskr.classList.toggle('connected', pskrConnected);
+  connRemote.classList.toggle('hidden', !enableRemote);
+  connRemote.classList.toggle('connected', remoteConnected);
 }
 
 function updateRbnButton() {
@@ -1499,6 +1532,67 @@ setSmartSdrSpots.addEventListener('change', () => {
 setTciSpots.addEventListener('change', () => {
   tciConfig.classList.toggle('hidden', !setTciSpots.checked);
 });
+
+// ECHO CAT checkbox toggles config visibility
+setEnableRemote.addEventListener('change', async () => {
+  remoteConfig.classList.toggle('hidden', !setEnableRemote.checked);
+  if (setEnableRemote.checked) {
+    await populateRemoteURLs();
+  }
+});
+
+setRemoteRequireToken.addEventListener('change', () => {
+  remoteTokenRow.classList.toggle('hidden', !setRemoteRequireToken.checked);
+});
+
+remoteRegenToken.addEventListener('click', () => {
+  const arr = new Uint8Array(3);
+  crypto.getRandomValues(arr);
+  setRemoteToken.value = Array.from(arr).map(b => b.toString(16).padStart(2, '0')).join('').toUpperCase();
+});
+
+async function populateRigAudioDevices(restoreIn, restoreOut) {
+  try {
+    await navigator.mediaDevices.getUserMedia({ audio: true }).then(s => s.getTracks().forEach(t => t.stop()));
+    const devices = await navigator.mediaDevices.enumerateDevices();
+    const inputs = devices.filter(d => d.kind === 'audioinput');
+    const outputs = devices.filter(d => d.kind === 'audiooutput');
+    rigRemoteAudioInput.innerHTML = '<option value="">-- system default --</option>' +
+      inputs.map(d => `<option value="${d.deviceId}">${d.label || d.deviceId.slice(0, 20)}</option>`).join('');
+    rigRemoteAudioOutput.innerHTML = '<option value="">-- system default --</option>' +
+      outputs.map(d => `<option value="${d.deviceId}">${d.label || d.deviceId.slice(0, 20)}</option>`).join('');
+    if (restoreIn) rigRemoteAudioInput.value = restoreIn;
+    if (restoreOut) rigRemoteAudioOutput.value = restoreOut;
+  } catch (e) {
+    console.warn('Could not enumerate audio devices:', e.message);
+  }
+}
+
+async function updateRemoteAudioSummary(audioInId, audioOutId) {
+  if (!remoteAudioSummary) return;
+  if (!audioInId && !audioOutId) {
+    remoteAudioSummary.textContent = 'not configured \u2014 set in My Rigs';
+    return;
+  }
+  try {
+    const devices = await navigator.mediaDevices.enumerateDevices();
+    const inLabel = audioInId ? (devices.find(d => d.deviceId === audioInId)?.label || audioInId.slice(0, 16)) : 'default';
+    const outLabel = audioOutId ? (devices.find(d => d.deviceId === audioOutId)?.label || audioOutId.slice(0, 16)) : 'default';
+    remoteAudioSummary.textContent = `${inLabel} / ${outLabel}`;
+  } catch {
+    remoteAudioSummary.textContent = audioInId || audioOutId ? 'configured' : 'not configured \u2014 set in My Rigs';
+  }
+}
+
+async function populateRemoteURLs() {
+  try {
+    const ips = await window.api.getLocalIPs();
+    const port = setRemotePort.value || 7300;
+    remoteUrlDisplay.innerHTML = ips.map(ip =>
+      `<div>${ip.tailscale ? '<strong style="color:#4ecca3;">(Tailscale)</strong> ' : ''}https://${ip.address}:${port}</div>`
+    ).join('');
+  } catch {}
+}
 
 // CW Keyer checkbox toggles config visibility + auto-connect MIDI
 setEnableCwKeyer.addEventListener('change', () => {
@@ -4502,6 +4596,10 @@ const quickLightMode = document.getElementById('quick-light-mode');
 const quickActivatorMode = document.getElementById('quick-activator-mode');
 const openSettingsBtn = document.getElementById('open-settings-btn');
 
+settingsDropdown.querySelector('.settings-dropdown-panel').addEventListener('click', (e) => {
+  e.stopPropagation();
+});
+
 settingsBtn.addEventListener('click', (e) => {
   e.stopPropagation();
   document.querySelectorAll('.multi-dropdown.open').forEach((d) => {
@@ -4513,6 +4611,7 @@ settingsBtn.addEventListener('click', (e) => {
     // Sync switches to current state
     quickLightMode.checked = document.documentElement.getAttribute('data-theme') === 'light';
     quickActivatorMode.checked = appMode === 'activator';
+    refreshEchoCatInfo();
   }
 });
 
@@ -4539,6 +4638,71 @@ openSettingsBtn.addEventListener('click', () => {
   settingsDropdown.classList.remove('open');
   closeActivatorSettingsPanel();
   openSettingsDialog();
+});
+
+// ECHO CAT quick toggle
+const quickEchoCat = document.getElementById('quick-echo-cat');
+const echoCatInfo = document.getElementById('echo-cat-info');
+const echoCatUrl = document.getElementById('echo-cat-url');
+const echoCatToken = document.getElementById('echo-cat-token');
+const echoCatCopy = document.getElementById('echo-cat-copy');
+
+async function refreshEchoCatInfo() {
+  const s = await window.api.getSettings();
+  const on = s.enableRemote === true;
+  quickEchoCat.checked = on;
+  echoCatInfo.classList.toggle('hidden', !on);
+  if (on) {
+    const port = s.remotePort || 7300;
+    const token = s.remoteToken || '';
+    const ips = await window.api.getLocalIPs();
+    const best = ips.find(ip => ip.tailscale) || ips[0];
+    if (best) {
+      echoCatUrl.innerHTML = `<span class="echo-cat-ip">https://${best.address}:${port}</span>`;
+    } else {
+      echoCatUrl.textContent = 'No network found';
+    }
+    const requireToken = s.remoteRequireToken !== false;
+    const tokenRow = echoCatToken.closest('.echo-cat-token-row');
+    if (requireToken && token) {
+      echoCatToken.textContent = token;
+      if (tokenRow) tokenRow.classList.remove('hidden');
+    } else {
+      echoCatToken.textContent = '';
+      if (tokenRow) tokenRow.classList.add('hidden');
+    }
+  }
+}
+
+quickEchoCat.addEventListener('change', async () => {
+  const on = quickEchoCat.checked;
+  enableRemote = on;
+  setEnableRemote.checked = on;
+  remoteConfig.classList.toggle('hidden', !on);
+  echoCatInfo.classList.toggle('hidden', !on);
+  await window.api.saveSettings({ enableRemote: on });
+  if (on) {
+    await populateRemoteURLs();
+    await refreshEchoCatInfo();
+  }
+  updateSettingsConnBar();
+});
+
+echoCatCopy.addEventListener('click', async () => {
+  const s = await window.api.getSettings();
+  const port = s.remotePort || 7300;
+  const token = s.remoteToken || '';
+  const ips = await window.api.getLocalIPs();
+  const best = ips.find(ip => ip.tailscale) || ips[0];
+  const url = best ? `https://${best.address}:${port}` : '';
+  const requireToken = s.remoteRequireToken !== false;
+  const text = (requireToken && token) ? `${url}\nToken: ${token}` : url;
+  try {
+    await navigator.clipboard.writeText(text);
+    echoCatCopy.textContent = 'Copied!';
+    echoCatCopy.classList.add('copied');
+    setTimeout(() => { echoCatCopy.textContent = 'Copy'; echoCatCopy.classList.remove('copied'); }, 1500);
+  } catch {}
 });
 
 // Settings dialog
@@ -4657,6 +4821,21 @@ async function openSettingsDialog() {
       connectMidiDevice(setCwMidiDevice.value);
     });
   }
+  // ECHO CAT
+  enableRemote = s.enableRemote === true;
+  setEnableRemote.checked = enableRemote;
+  remoteConfig.classList.toggle('hidden', !enableRemote);
+  setRemotePort.value = s.remotePort || 7300;
+  const requireToken = s.remoteRequireToken !== false; // default true for existing users
+  setRemoteRequireToken.checked = requireToken;
+  remoteTokenRow.classList.toggle('hidden', !requireToken);
+  setRemoteToken.value = s.remoteToken || '';
+  setRemotePttTimeout.value = s.remotePttTimeout || 180;
+  if (enableRemote) {
+    populateRemoteURLs();
+  }
+  updateRemoteAudioSummary(s.remoteAudioInput, s.remoteAudioOutput);
+  updateSettingsConnBar();
   setDisableAutoUpdate.checked = s.disableAutoUpdate === true;
   setEnableTelemetry.checked = s.enableTelemetry === true;
   setLightMode.checked = s.lightMode === true;
@@ -4753,6 +4932,13 @@ settingsSave.addEventListener('click', async () => {
   const tciHostVal = setTciHost.value.trim() || '127.0.0.1';
   const tciPortVal = parseInt(setTciPort.value, 10) || 50001;
   const tciMaxAgeVal = parseInt(setTciMaxAge.value, 10) || 0;
+  // ECHO CAT
+  const remoteEnabled = setEnableRemote.checked;
+  const remotePortVal = parseInt(setRemotePort.value, 10) || 7300;
+  const remoteRequireTokenVal = setRemoteRequireToken.checked;
+  const remoteTokenVal = setRemoteToken.value;
+  const remotePttTimeoutVal = parseInt(setRemotePttTimeout.value, 10) || 180;
+  // Audio comes from the active rig (resolved after selectedRig below)
   // CW Keyer
   const cwKeyerEnabled = setEnableCwKeyer.checked;
   const cwKeyerModeVal = setCwKeyerMode.value;
@@ -4864,6 +5050,13 @@ settingsSave.addEventListener('click', async () => {
     cwSidetone: cwSidetoneVal,
     cwSidetonePitch: cwSidetonePitchVal,
     cwSidetoneVolume: cwSidetoneVolumeVal,
+    enableRemote: remoteEnabled,
+    remotePort: remotePortVal,
+    remoteRequireToken: remoteRequireTokenVal,
+    remoteToken: remoteTokenVal,
+    remotePttTimeout: remotePttTimeoutVal,
+    remoteAudioInput: selectedRig ? (selectedRig.remoteAudioInput || '') : '',
+    remoteAudioOutput: selectedRig ? (selectedRig.remoteAudioOutput || '') : '',
     appMode: document.querySelector('input[name="set-app-mode"]:checked')?.value || 'hunter',
   });
   grid = setGrid.value.trim();
@@ -4878,6 +5071,7 @@ settingsSave.addEventListener('click', async () => {
   enableCluster = clusterEnabled;
   enableRbn = rbnEnabled;
   enablePskr = pskrEnabled;
+  enableRemote = remoteEnabled;
   enableWsjtx = wsjtxEnabled;
   updateWsjtxStatusVisibility();
   updateRbnButton();
@@ -6239,6 +6433,21 @@ window.api.onPskrStatus(({ connected, error, spotCount, nextPollAt, pollUpdate }
     if (connected && spotCount != null) showLogToast(`FreeDV: ${spotCount} spots (polling every 5 min)`, { duration: 4000 });
     if (error) showLogToast(error, { warn: true, duration: 5000 });
   }
+});
+
+// ECHO CAT status
+window.api.onRemoteStatus((s) => {
+  remoteConnected = s.connected;
+  updateSettingsConnBar();
+});
+
+window.api.onRemoteTxState((state) => {
+  if (remoteTxIndicator) remoteTxIndicator.classList.toggle('hidden', !state);
+});
+
+// Reload prefs when ECHO CAT changes settings remotely
+window.api.onReloadPrefs(() => {
+  loadPrefs();
 });
 
 // FreeDV tooltip — show countdown to next poll on hover

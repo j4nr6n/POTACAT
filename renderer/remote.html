@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="theme-color" content="#1a1a2e">
+  <meta name="format-detection" content="telephone=no">
+  <title>ECHO CAT</title>
+  <link rel="stylesheet" href="remote.css">
+</head>
+<body>
+
+  <!-- Connection screen -->
+  <div id="connect-screen">
+    <div class="connect-box">
+      <h1 class="connect-title">ECHO CAT</h1>
+      <p class="connect-subtitle">Remote Radio</p>
+      <input type="text" id="token-input" placeholder="Access Token" maxlength="10"
+             autocapitalize="characters" autocomplete="off" autocorrect="off" spellcheck="false">
+      <button id="connect-btn" type="button">Connect</button>
+      <div id="connect-error" class="hidden"></div>
+    </div>
+  </div>
+
+  <!-- Main UI (hidden until authenticated) -->
+  <div id="main-ui" class="hidden">
+
+    <!-- Status bar -->
+    <div id="status-bar">
+      <div class="status-left">
+        <span id="freq-display">---.---.---</span>
+        <span id="mode-badge">---</span>
+        <div id="freq-edit" class="hidden">
+          <input type="number" id="freq-input" inputmode="decimal" placeholder="kHz" step="any">
+          <button id="freq-go" type="button">Go</button>
+        </div>
+      </div>
+      <div class="status-right">
+        <span id="cat-dot" class="cat-dot disconnected" title="Radio disconnected"></span>
+        <span id="audio-dot" class="audio-dot hidden" title="Audio"></span>
+        <span id="latency">--ms</span>
+      </div>
+    </div>
+
+    <!-- TX indicator banner -->
+    <div id="tx-banner" class="hidden">TRANSMITTING</div>
+
+    <!-- Source toggles -->
+    <div id="source-bar">
+      <button class="source-chip active" data-src="pota" style="--src-color:#4ecca3">POTA</button>
+      <button class="source-chip" data-src="sota" style="--src-color:#f0a500">SOTA</button>
+      <button class="source-chip" data-src="wwff" style="--src-color:#26a69a">WWFF</button>
+      <button class="source-chip" data-src="llota" style="--src-color:#42a5f5">LLOTA</button>
+      <button class="source-chip" data-src="dxc" style="--src-color:#e040fb">DX</button>
+    </div>
+
+    <!-- Filter chips -->
+    <div id="filter-bar">
+      <div id="band-filters" class="filter-row">
+        <button class="filter-chip active" data-band="all">All</button>
+        <button class="filter-chip" data-band="160m">160</button>
+        <button class="filter-chip" data-band="80m">80</button>
+        <button class="filter-chip" data-band="60m">60</button>
+        <button class="filter-chip" data-band="40m">40</button>
+        <button class="filter-chip" data-band="30m">30</button>
+        <button class="filter-chip" data-band="20m">20</button>
+        <button class="filter-chip" data-band="17m">17</button>
+        <button class="filter-chip" data-band="15m">15</button>
+        <button class="filter-chip" data-band="12m">12</button>
+        <button class="filter-chip" data-band="10m">10</button>
+        <button class="filter-chip" data-band="6m">6</button>
+      </div>
+    </div>
+
+    <!-- Spot list -->
+    <div id="spot-list"></div>
+
+    <!-- Bottom controls -->
+    <div id="bottom-bar">
+      <button id="audio-btn" type="button" class="audio-button">
+        <span class="audio-icon">&#x1F50A;</span>
+        <span class="audio-label">Audio</span>
+      </button>
+      <button id="log-btn" type="button" class="log-button">
+        <span class="log-icon">&#x270F;</span>
+        <span class="log-label">Log</span>
+      </button>
+      <button id="ptt-btn" type="button" class="ptt-button">PTT</button>
+      <button id="estop-btn" type="button" class="estop-button">STOP</button>
+    </div>
+
+    <!-- Log QSO sheet -->
+    <div id="log-sheet-backdrop" class="hidden"></div>
+    <div id="log-sheet" class="hidden">
+      <div class="log-sheet-handle"></div>
+      <h2 class="log-sheet-title">Log QSO</h2>
+      <form id="log-form" autocomplete="off">
+        <div class="log-field">
+          <label for="log-call">Callsign</label>
+          <input type="text" id="log-call" autocapitalize="characters" autocorrect="off" spellcheck="false">
+        </div>
+        <div class="log-row">
+          <div class="log-field log-field-half">
+            <label for="log-freq">Freq kHz</label>
+            <input type="text" id="log-freq" inputmode="decimal">
+          </div>
+          <div class="log-field log-field-half">
+            <label for="log-mode">Mode</label>
+            <select id="log-mode">
+              <option value="SSB">SSB</option>
+              <option value="CW">CW</option>
+              <option value="FT8">FT8</option>
+              <option value="FT4">FT4</option>
+              <option value="FM">FM</option>
+              <option value="RTTY">RTTY</option>
+              <option value="AM">AM</option>
+            </select>
+          </div>
+        </div>
+        <div class="log-row">
+          <div class="log-field log-field-half">
+            <label for="log-rst-sent">RST Sent</label>
+            <input type="text" id="log-rst-sent" inputmode="numeric" maxlength="3">
+          </div>
+          <div class="log-field log-field-half">
+            <label for="log-rst-rcvd">RST Rcvd</label>
+            <input type="text" id="log-rst-rcvd" inputmode="numeric" maxlength="3">
+          </div>
+        </div>
+        <input type="hidden" id="log-sig">
+        <input type="hidden" id="log-sig-info">
+        <div class="log-buttons">
+          <button type="button" id="log-cancel" class="log-btn-cancel">Cancel</button>
+          <button type="submit" id="log-save" class="log-btn-save">Save</button>
+        </div>
+      </form>
+    </div>
+
+    <!-- Log toast -->
+    <div id="log-toast" class="log-toast hidden"></div>
+
+    <!-- Audio element for receiving radio RX audio (must be in DOM for iOS) -->
+    <audio id="remote-audio" playsinline></audio>
+
+    <!-- Welcome tip -->
+    <div id="welcome-overlay" class="hidden">
+      <div class="welcome-card">
+        <h2 class="welcome-title">ECHO CAT</h2>
+        <p class="welcome-text">To connect to your radio's audio, press the <b>Audio</b> button, wait a few moments, then press it again to fully connect.</p>
+        <p class="welcome-text">When connected, the button will say <b>Live</b>.</p>
+        <label class="welcome-check"><input type="checkbox" id="welcome-hide"> Don't show this again</label>
+        <button type="button" id="welcome-ok" class="welcome-ok">Got it</button>
+      </div>
+    </div>
+
+  </div>
+
+  <script src="remote.js"></script>
+</body>
+</html>

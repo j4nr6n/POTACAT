@@ -124,4 +124,9 @@ contextBridge.exposeInMainWorld('api', {
   onCwKey: (cb) => ipcRenderer.on('cw-key', (_e, data) => cb(data)),
   onCwKeyerStatus: (cb) => ipcRenderer.on('cw-keyer-status', (_e, s) => cb(s)),
   onCwText: (cb) => ipcRenderer.on('cw-text', (_e, data) => cb(data)),
+  // Remote Access
+  getLocalIPs: () => ipcRenderer.invoke('get-local-ips'),
+  onRemoteTxState: (cb) => ipcRenderer.on('remote-tx-state', (_e, state) => cb(state)),
+  onRemoteStatus: (cb) => ipcRenderer.on('remote-status', (_e, s) => cb(s)),
+  onReloadPrefs: (cb) => ipcRenderer.on('reload-prefs', () => cb()),
 });

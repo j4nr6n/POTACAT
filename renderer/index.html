@@ -101,6 +101,21 @@
             <span>Activator</span>
           </label>
           <div class="spots-panel-divider"></div>
+          <div class="echo-cat-quick">
+            <label class="switch-label compact">
+              <span>ECHO CAT</span>
+              <div class="switch"><input type="checkbox" id="quick-echo-cat"><span class="switch-slider"></span></div>
+            </label>
+            <div id="echo-cat-info" class="echo-cat-info hidden">
+              <div class="echo-cat-url" id="echo-cat-url"></div>
+              <div class="echo-cat-token-row">
+                <span class="echo-cat-token-label">Token:</span>
+                <span class="echo-cat-token-value" id="echo-cat-token"></span>
+                <button type="button" id="echo-cat-copy" class="echo-cat-copy-btn" title="Copy connection info">Copy</button>
+              </div>
+            </div>
+          </div>
+          <div class="spots-panel-divider"></div>
           <button type="button" id="open-settings-btn" class="settings-dropdown-link">Open Settings...</button>
         </div>
       </div>
@@ -115,6 +130,7 @@
     <div class="status-bar">
       <span id="utc-clock" class="utc-clock"></span>
       <span id="cat-status" class="status disconnected">CAT</span>
+      <span id="remote-tx-indicator" class="status hidden" style="background:#e94560;color:#fff;font-weight:bold;animation:tx-blink 1s ease-in-out infinite;">ECHO CAT TX</span>
       <span id="wsjtx-status" class="status disconnected hidden">WSJT-X</span>
       <span id="cw-keyer-status" class="status hidden" style="background:#b8860b;color:#fff;cursor:pointer;">CW</span>
       <span id="cw-text-display" class="hidden" style="font-family:monospace;font-size:11px;color:#4fc3f7;margin-left:4px;max-width:300px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;direction:rtl;text-align:left;"></span>
@@ -490,6 +506,7 @@
       <span id="conn-cluster" class="conn-pill hidden"><span class="conn-dot"></span> DX Cluster</span>
       <span id="conn-rbn" class="conn-pill hidden"><span class="conn-dot"></span> RBN</span>
       <span id="conn-pskr" class="conn-pill hidden"><span class="conn-dot"></span> FreeDV</span>
+      <span id="conn-remote" class="conn-pill hidden"><span class="conn-dot"></span> Echo CAT</span>
     </div>
     <!-- 0.5 App Mode -->
     <fieldset class="source-toggles">
@@ -642,6 +659,18 @@
           <label>Host: <input type="text" id="set-rigctldnet-host" placeholder="192.168.1.100" value="127.0.0.1"></label>
           <label>Port: <input type="number" id="set-rigctldnet-port" min="1" max="65535" value="4532"></label>
         </div>
+        <details id="rig-audio-details" style="margin-top:8px;">
+          <summary style="cursor:pointer;font-size:13px;color:#4fc3f7;">ECHO CAT Audio (optional)</summary>
+          <div style="margin-top:6px;margin-left:4px;">
+            <label>Audio Input (radio RX &rarr; phone):
+              <select id="rig-remote-audio-input" style="width:100%;margin-top:2px;"><option value="">-- system default --</option></select>
+            </label>
+            <label style="margin-top:4px;display:block;">Audio Output (phone &rarr; radio TX):
+              <select id="rig-remote-audio-output" style="width:100%;margin-top:2px;"><option value="">-- system default --</option></select>
+            </label>
+            <span class="help-text" style="margin-top:4px;display:block;">Set per-rig audio devices for ECHO CAT remote operation</span>
+          </div>
+        </details>
         <div class="rig-editor-buttons">
           <button type="button" id="rig-save-btn">Save Rig</button>
           <button type="button" id="rig-cancel-btn">Cancel</button>
@@ -919,7 +948,35 @@
         </div>
       </div>
     </fieldset>
-    <!-- 10. About (merged Privacy + Diagnostics) -->
+    <!-- 10. ECHO CAT -->
+    <fieldset class="source-toggles">
+      <legend>ECHO CAT</legend>
+      <label class="checkbox-label"><input type="checkbox" id="set-enable-remote"> Enable ECHO CAT (phone browser over Tailscale)</label>
+      <div id="remote-config" class="radio-sub hidden" style="margin-top:6px;margin-left:12px;">
+        <label>Port:
+          <input type="number" id="set-remote-port" placeholder="7300" min="1024" max="65535" value="7300" style="width:80px;">
+        </label>
+        <label class="checkbox-label" style="margin-top:8px;"><input type="checkbox" id="set-remote-require-token"> Require access token</label>
+        <div id="remote-token-row" class="hidden" style="margin-top:6px;display:flex;align-items:center;gap:8px;">
+          <label>Token:
+            <input type="text" id="set-remote-token" style="width:120px;font-family:monospace;letter-spacing:1px;text-transform:uppercase;" placeholder="e.g. K3SBP" autocomplete="off" spellcheck="false">
+          </label>
+          <button type="button" id="remote-regen-token" style="padding:2px 8px;">Random</button>
+        </div>
+        <span class="help-text">Tailscale already secures the connection — token is optional</span>
+        <div id="remote-audio-display" style="margin-top:8px;font-size:12px;color:#aaa;">
+          Audio: <span id="remote-audio-summary">not configured — set in My Rigs</span>
+        </div>
+        <div style="margin-top:4px;">
+          <label>PTT Safety Timeout (seconds):
+            <input type="number" id="set-remote-ptt-timeout" min="30" max="600" value="180" style="width:70px;">
+          </label>
+        </div>
+        <div id="remote-url-display" style="margin-top:8px;font-family:monospace;font-size:12px;"></div>
+        <span class="help-text">To use ECHO CAT securely outside your home network, install <a href="https://tailscale.com" target="_blank" style="color:#4fc3f7;">Tailscale</a> on both your shack computer and phone. Audio, tuning, and PTT are all encrypted over the Tailscale VPN.</span>
+      </div>
+    </fieldset>
+    <!-- 11. About (merged Privacy + Diagnostics) -->
     <fieldset class="source-toggles">
       <legend>About</legend>
       <label class="checkbox-label"><input type="checkbox" id="set-disable-auto-update"> Disable automatic updates</label>
@@ -1075,7 +1132,7 @@
         <tr><td><kbd>F2</kbd></td><td>View/Edit Logbook</td></tr>
         <tr><td><kbd>F5</kbd></td><td>Check for updates</td></tr>
         <tr><td><kbd>F11</kbd></td><td>Welcome / setup screen</td></tr>
-        <tr><td><kbd>&uarr;</kbd> <kbd>&darr;</kbd></td><td>Navigate spots &amp; tune radio</td></tr>
+        <tr><td><kbd>&uarr;&darr;</kbd></td><td>Navigate spots &amp; tune radio</td></tr>
         <tr><td><kbd>Space</kbd></td><td>Start / stop scan</td></tr>
         <tr><td><kbd>S</kbd></td><td>Toggle split mode</td></tr>
         <tr><td><kbd>Ctrl+L</kbd></td><td>Quick Log (unspotted QSO)</td></tr>

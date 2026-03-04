@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html>
+<head><title>ECHO CAT Audio Bridge</title></head>
+<body>
+<audio id="remote-playback" autoplay></audio>
+<script>
+// Hidden BrowserWindow — WebRTC audio bridge between radio USB audio and phone
+let pc = null;
+let localStream = null;
+const audioEl = document.getElementById('remote-playback');
+
+window.api.onStartAudio(async (config) => {
+  try {
+    // Clean up any previous session
+    if (pc) { pc.close(); pc = null; }
+    if (localStream) { localStream.getTracks().forEach(t => t.stop()); localStream = null; }
+    audioEl.srcObject = null;
+
+    // Capture radio's USB audio output (RX audio to send to phone)
+    const constraints = {
+      audio: {
+        echoCancellation: false,
+        noiseSuppression: false,
+        autoGainControl: false,
+      },
+    };
+    // Use specific device if configured
+    if (config.inputDeviceId) {
+      constraints.audio.deviceId = { exact: config.inputDeviceId };
+    }
+
+    localStream = await navigator.mediaDevices.getUserMedia(constraints);
+
+    // Create peer connection (no STUN/TURN — Tailscale provides direct connectivity)
+    pc = new RTCPeerConnection({ iceServers: [] });
+
+    // Add radio RX audio track to send to phone
+    for (const track of localStream.getTracks()) {
+      pc.addTrack(track, localStream);
+    }
+
+    // When phone's mic audio arrives, route to radio's USB audio input
+    pc.ontrack = async (event) => {
+      audioEl.srcObject = event.streams[0];
+      // Route to specific output device (radio's USB audio input)
+      if (config.outputDeviceId && typeof audioEl.setSinkId === 'function') {
+        try {
+          await audioEl.setSinkId(config.outputDeviceId);
+        } catch (e) {
+          window.api.sendAudioStatus({ error: 'Failed to set output device: ' + e.message });
+        }
+      }
+    };
+
+    // ICE candidates — relay to phone via main process
+    // Must extract plain object — RTCIceCandidate getters are lost during IPC structured clone
+    pc.onicecandidate = (event) => {
+      if (event.candidate) {
+        window.api.sendSignal({ type: 'ice', candidate: {
+          candidate: event.candidate.candidate,
+          sdpMid: event.candidate.sdpMid,
+          sdpMLineIndex: event.candidate.sdpMLineIndex,
+        }});
+      }
+    };
+
+    pc.onconnectionstatechange = () => {
+      const state = pc ? pc.connectionState : 'closed';
+      window.api.sendAudioStatus({ connectionState: state });
+    };
+
+    // Create offer (we initiate)
+    // Must extract plain object — RTCSessionDescription getters are lost during IPC structured clone
+    const offer = await pc.createOffer();
+    await pc.setLocalDescription(offer);
+    window.api.sendSignal({ type: 'sdp', sdp: {
+      type: pc.localDescription.type,
+      sdp: pc.localDescription.sdp,
+    }});
+
+    window.api.sendAudioStatus({ status: 'started' });
+  } catch (err) {
+    window.api.sendAudioStatus({ error: err.message });
+  }
+});
+
+// Handle signaling from phone (relayed via main process)
+window.api.onSignal(async (data) => {
+  if (!pc || !data) return;
+
+  try {
+    if (data.type === 'sdp') {
+      // Phone answer arrives as plain object (JSON over WS) — safe to pass directly
+      await pc.setRemoteDescription(data.sdp);
+      // If we received an offer (shouldn't happen since we initiate), create answer
+      if (data.sdp.type === 'offer') {
+        const answer = await pc.createAnswer();
+        await pc.setLocalDescription(answer);
+        window.api.sendSignal({ type: 'sdp', sdp: {
+          type: pc.localDescription.type,
+          sdp: pc.localDescription.sdp,
+        }});
+      }
+    } else if (data.type === 'ice') {
+      await pc.addIceCandidate(data.candidate);
+    }
+  } catch (err) {
+    window.api.sendAudioStatus({ error: 'Signaling error: ' + err.message });
+  }
+});
+
+// Cleanup
+window.api.onStopAudio(() => {
+  if (pc) { pc.close(); pc = null; }
+  if (localStream) {
+    localStream.getTracks().forEach(t => t.stop());
+    localStream = null;
+  }
+  audioEl.srcObject = null;
+  window.api.sendAudioStatus({ status: 'stopped' });
+});
+</script>
+</body>
+</html>

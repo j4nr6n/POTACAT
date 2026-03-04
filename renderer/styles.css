@@ -69,6 +69,7 @@
 .learn-btn:hover { background:var(--accent-blue); color:var(--bg-primary); }
 .learn-btn.learning { background:var(--accent-red); border-color:var(--accent-red); color:#fff; animation: pulse 1s infinite; }
 @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.6} }
+@keyframes tx-blink { 0%,100%{opacity:1} 50%{opacity:0.5} }
 
 * {
   margin: 0;
@@ -252,17 +253,26 @@ header {
   display: block;
 }
 
+#settings-dropdown.open .multi-dropdown-btn {
+  background: var(--bg-secondary);
+  border-color: var(--border-primary);
+  border-bottom-color: var(--bg-secondary);
+  border-radius: 4px 4px 0 0;
+  position: relative;
+  z-index: 1001;
+}
+
 /* Settings quick-access dropdown */
 .settings-dropdown-panel {
   display: none;
   position: absolute;
   right: 0;
-  top: 100%;
+  top: calc(100% - 1px);
   background: var(--bg-secondary);
   border: 1px solid var(--border-primary);
-  border-radius: 6px;
+  border-radius: 0 0 6px 6px;
   padding: 10px 14px;
-  min-width: 200px;
+  min-width: 260px;
   z-index: 1000;
   box-shadow: 0 4px 12px var(--shadow-heavy);
 }
@@ -291,6 +301,49 @@ header {
   background: var(--bg-hover);
   color: var(--text-primary);
 }
+
+/* ECHO CAT quick-access */
+.echo-cat-quick .switch-label { margin-bottom: 0; }
+.echo-cat-info {
+  margin-top: 6px;
+  padding: 6px 8px;
+  background: var(--bg-primary);
+  border-radius: 4px;
+  font-size: 11px;
+  line-height: 1.5;
+}
+.echo-cat-url {
+  color: var(--text-secondary);
+  white-space: nowrap;
+  font-family: monospace;
+  font-size: 10px;
+}
+.echo-cat-url .echo-cat-ip { color: #4ecca3; font-weight: bold; }
+.echo-cat-token-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 4px;
+}
+.echo-cat-token-label { color: var(--text-secondary); }
+.echo-cat-token-value {
+  font-family: monospace;
+  font-weight: bold;
+  color: #4fc3f7;
+  letter-spacing: 1px;
+}
+.echo-cat-copy-btn {
+  margin-left: auto;
+  background: var(--border-primary);
+  border: none;
+  border-radius: 3px;
+  color: var(--text-secondary);
+  font-size: 10px;
+  padding: 2px 8px;
+  cursor: pointer;
+}
+.echo-cat-copy-btn:hover { background: var(--bg-hover); color: var(--text-primary); }
+.echo-cat-copy-btn.copied { color: #4ecca3; }
 
 .spots-panel-section-label {
   padding: 4px 10px 2px;
