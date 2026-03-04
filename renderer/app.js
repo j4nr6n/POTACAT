@@ -7144,8 +7144,9 @@ async function showWhatsNew(version) {
 }
 
 function formatReleaseNotes(md) {
-  // Strip everything from download/install/checksum sections onward
-  md = md.replace(/\n## (Install|Download|Checksums|SHA-?256)[\s\S]*/i, '').trim();
+  // Strip everything from download/install/checksum/smartscreen sections onward
+  md = md.replace(/\n---[\s\S]*/m, '').trim();
+  md = md.replace(/\n#{1,4} *(Install|Download|Checksum|SHA-?256|SmartScreen)[\s\S]*/i, '').trim();
   // Strip any "Generated with" / Claude / Anthropic footer lines
   md = md.replace(/^.*(?:generated with|claude|anthropic).*$/gim, '').trim();
 
