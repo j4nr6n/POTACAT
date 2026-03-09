@@ -1830,3 +1830,244 @@ html, body {
 
 /* Welcome overlay */
 [data-theme="light"] #welcome-overlay { background: rgba(255,255,255,0.6); }
+
+/* ========== TABLET (iPad) ========== */
+@media (min-width: 768px) {
+
+  /* --- Safe area for landscape --- */
+  :root {
+    --safe-left: env(safe-area-inset-left, 0px);
+    --safe-right: env(safe-area-inset-right, 0px);
+  }
+
+  /* --- Status Bar --- */
+  #status-bar {
+    padding: 12px 20px;
+    padding-left: calc(20px + var(--safe-left));
+    padding-right: calc(20px + var(--safe-right));
+  }
+  #freq-display { font-size: 28px; }
+  #mode-badge { font-size: 14px; padding: 3px 10px; }
+  .cat-dot, .audio-dot { width: 10px; height: 10px; }
+  #latency { font-size: 12px; }
+  .rig-ctrl-toggle { font-size: 22px; padding: 4px 8px; }
+  #freq-input { width: 160px; font-size: 22px; }
+  #freq-go { padding: 6px 14px; font-size: 16px; }
+
+  /* --- Mode Picker --- */
+  #mode-picker { max-width: 280px; gap: 6px; padding: 10px; }
+  .mp-btn { padding: 8px 14px; font-size: 14px; min-width: 52px; }
+
+  /* --- Tab Bar --- */
+  #tab-bar .tab { padding: 12px 0; font-size: 15px; }
+  .tab-badge { font-size: 12px; min-width: 20px; }
+
+  /* --- Filter Toolbar --- */
+  #filter-toolbar {
+    gap: 10px;
+    padding: 8px 20px;
+    padding-left: calc(20px + var(--safe-left));
+    padding-right: calc(20px + var(--safe-right));
+  }
+  .rc-dropdown-btn { padding: 7px 14px; font-size: 14px; }
+  .rc-dropdown-menu, .rc-spots-panel { min-width: 180px; }
+  .rc-dropdown-item, .rc-spots-toggle { padding: 10px 16px; font-size: 14px; }
+  .rc-sort-select { font-size: 14px; padding: 7px 12px; }
+  .refresh-chip { font-size: 12px; padding: 3px 10px; }
+  .scan-status-btn { font-size: 13px; padding: 4px 12px; }
+
+  /* --- Spot List --- */
+  #spot-list {
+    padding: 8px 20px;
+    padding-left: calc(20px + var(--safe-left));
+    padding-right: calc(20px + var(--safe-right));
+  }
+  .spot-card { padding: 12px 14px; gap: 12px; margin-bottom: 6px; border-left-width: 4px; border-radius: 10px; }
+  .spot-call { font-size: 17px; min-width: 90px; }
+  .spot-freq { font-size: 15px; min-width: 80px; }
+  .spot-mode { font-size: 12px; padding: 2px 8px; }
+  .spot-ref { font-size: 14px; }
+  .spot-age { font-size: 12px; }
+  .spot-dist { font-size: 12px; }
+  .spot-log-btn { padding: 6px 14px; font-size: 13px; }
+  .spot-empty { font-size: 16px; }
+  .new-badge { font-size: 10px; padding: 2px 6px; }
+
+  /* --- Bottom Bar --- */
+  #bottom-bar {
+    gap: 24px;
+    padding: 16px 24px;
+    padding-bottom: calc(16px + var(--safe-bottom));
+    padding-left: calc(24px + var(--safe-left));
+    padding-right: calc(24px + var(--safe-right));
+  }
+  .ptt-button { width: 110px; height: 110px; font-size: 24px; border-width: 5px; }
+  .estop-button { width: 68px; height: 68px; font-size: 12px; }
+  .audio-button { width: 68px; height: 68px; font-size: 11px; }
+  .audio-icon { font-size: 22px; }
+  .audio-label { font-size: 10px; max-width: 60px; }
+  .speaker-button { width: 68px; height: 68px; }
+  .speaker-icon { font-size: 22px; }
+  .speaker-label { font-size: 10px; }
+
+  /* --- TX Banner --- */
+  #tx-banner { font-size: 16px; padding: 8px; letter-spacing: 3px; }
+
+  /* --- Log Sheet (constrain width on tablet) --- */
+  #log-sheet {
+    max-width: 540px;
+    margin: 0 auto;
+    left: 50%;
+    transform: translateX(-50%);
+    border-radius: 16px 16px 0 0;
+  }
+  #log-sheet.slide-down { transform: translate(-50%, 100%); }
+  .log-sheet-title { font-size: 20px; }
+  .log-field label { font-size: 13px; }
+  .log-field input, .log-field select { font-size: 16px; padding: 12px 14px; }
+  .log-btn-cancel, .log-btn-save { padding: 14px; font-size: 17px; }
+
+  /* --- Settings Overlay (constrain width) --- */
+  #settings-overlay {
+    left: 50%;
+    transform: translateX(-50%);
+    max-width: 600px;
+    border-radius: 0 0 16px 16px;
+    box-shadow: 0 8px 40px rgba(0,0,0,0.4);
+  }
+  .so-title { font-size: 20px; }
+  .so-section-label { font-size: 12px; }
+  .so-label { font-size: 15px; }
+  .so-select { height: 40px; font-size: 15px; }
+  .so-step-btn { width: 40px; height: 40px; font-size: 20px; }
+  .so-step-val { min-width: 56px; height: 40px; font-size: 15px; }
+  .so-slider { height: 36px; }
+  .so-slider-val { font-size: 14px; }
+  .rc-btn { min-width: 40px; height: 36px; font-size: 14px; }
+  .so-footer-by { font-size: 13px; }
+  .so-footer-links { font-size: 13px; }
+
+  /* --- Welcome Card --- */
+  .welcome-card { max-width: 400px; padding: 32px 28px; }
+  .welcome-title { font-size: 24px; }
+  .welcome-text { font-size: 15px; }
+  .welcome-ok { font-size: 17px; padding: 14px; }
+
+  /* --- Connect Screen --- */
+  .connect-box { max-width: 400px; }
+  .connect-title { font-size: 42px; }
+  .connect-subtitle { font-size: 16px; }
+  #token-input { font-size: 28px; padding: 16px; }
+  #connect-btn { font-size: 17px; padding: 16px; }
+  .connect-help { font-size: 13px; }
+
+  /* --- Activation Banner --- */
+  #activation-banner {
+    padding: 10px 20px;
+    padding-left: calc(20px + var(--safe-left));
+    padding-right: calc(20px + var(--safe-right));
+  }
+  .activation-ref { font-size: 17px; }
+  .activation-name { font-size: 13px; }
+  .activation-timer { font-size: 16px; }
+  .end-activation-btn { padding: 6px 16px; font-size: 13px; }
+
+  /* --- Activation Setup --- */
+  #activation-setup { padding: 24px 20px; max-width: 500px; margin: 0 auto; width: 100%; }
+  .setup-header { font-size: 20px; }
+  .setup-type-btn { padding: 12px 0; font-size: 15px; }
+  .setup-label { font-size: 13px; }
+  #setup-ref-input { padding: 14px 16px; font-size: 18px; }
+  .start-activation-btn { padding: 16px; font-size: 17px; }
+
+  /* --- Quick-Log Form --- */
+  #quick-log-form {
+    padding: 12px 20px 8px;
+    padding-left: calc(20px + var(--safe-left));
+    padding-right: calc(20px + var(--safe-right));
+  }
+  .ql-row { gap: 10px; }
+  #ql-call { font-size: 20px; padding: 12px 14px; }
+  .ql-call-info { font-size: 13px; }
+  .ql-log-btn { padding: 12px 24px; font-size: 17px; }
+  .ql-freq { font-size: 15px; padding: 8px 10px; }
+  .ql-mode { font-size: 15px; padding: 8px 10px; }
+  .ql-rst { width: 48px; font-size: 15px; padding: 8px 6px; }
+  .ql-notes { font-size: 14px; padding: 8px 10px; }
+
+  /* --- Contact List --- */
+  #contact-list {
+    padding: 8px 20px;
+    padding-left: calc(20px + var(--safe-left));
+    padding-right: calc(20px + var(--safe-right));
+  }
+  .contact-row { padding: 10px 12px; gap: 8px; font-size: 14px; border-left-width: 4px; }
+  .contact-nr { font-size: 12px; }
+  .contact-time { font-size: 13px; }
+  .contact-call { font-size: 15px; }
+  .contact-freq { font-size: 13px; }
+  .contact-mode { font-size: 12px; }
+  .contact-rst { font-size: 12px; }
+
+  /* --- Log Footer --- */
+  #log-footer {
+    padding: 10px 20px;
+    padding-bottom: calc(10px + var(--safe-bottom));
+    padding-left: calc(20px + var(--safe-left));
+    padding-right: calc(20px + var(--safe-right));
+    font-size: 14px;
+  }
+  .export-adif-btn { font-size: 13px; padding: 8px 16px; }
+
+  /* --- Log Tab View --- */
+  .log-tab-content { max-width: 540px; }
+
+  /* --- Logbook View --- */
+  .lb-toolbar {
+    padding: 10px 20px;
+    padding-left: calc(20px + var(--safe-left));
+    padding-right: calc(20px + var(--safe-right));
+  }
+  #lb-search { font-size: 15px; padding: 10px 14px; }
+  .lb-count { font-size: 13px; }
+  .lb-list {
+    padding: 8px 20px;
+    padding-left: calc(20px + var(--safe-left));
+    padding-right: calc(20px + var(--safe-right));
+  }
+  .lb-card-header { padding: 12px 14px; gap: 8px; }
+  .lb-call { font-size: 15px; min-width: 80px; }
+  .lb-freq { font-size: 13px; }
+  .lb-mode { font-size: 11px; }
+  .lb-ref { font-size: 13px; }
+  .lb-date { font-size: 12px; }
+
+  /* --- Past Activations --- */
+  .pa-header { font-size: 18px; padding: 14px 20px 10px; }
+  .pa-card { margin: 6px 20px; }
+  .pa-card-header { padding: 14px; }
+  .pa-ref { font-size: 15px; }
+  .pa-date { font-size: 13px; }
+  .pa-count { font-size: 13px; }
+
+  /* --- Activation Map --- */
+  .act-map-bar { padding: 12px 16px; }
+  .act-map-title { font-size: 16px; }
+
+  /* --- Reconnecting --- */
+  #reconnecting { font-size: 18px; }
+
+  /* --- Log Toast --- */
+  .log-toast { font-size: 15px; padding: 12px 24px; bottom: 160px; }
+}
+
+/* ========== TABLET LANDSCAPE ========== */
+@media (min-width: 768px) and (orientation: landscape) {
+  /* Landscape iPad — wider safe areas, more horizontal room */
+  #status-bar { padding-top: 8px; padding-bottom: 8px; }
+  #bottom-bar { padding-top: 12px; padding-bottom: calc(12px + var(--safe-bottom)); }
+  .ptt-button { width: 90px; height: 90px; font-size: 20px; }
+  .estop-button { width: 60px; height: 60px; }
+  .audio-button { width: 60px; height: 60px; }
+  .speaker-button { width: 60px; height: 60px; }
+}

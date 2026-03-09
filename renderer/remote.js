@@ -1012,6 +1012,18 @@
   pttBtn.addEventListener('mouseup', (e) => { e.preventDefault(); pttStop(); });
   pttBtn.addEventListener('mouseleave', (e) => { if (pttDown) pttStop(); });
 
+  // Spacebar PTT (iPad keyboard)
+  document.addEventListener('keydown', (e) => {
+    if (e.code === 'Space' && !e.repeat && !isInputFocused()) { e.preventDefault(); pttStart(); }
+  });
+  document.addEventListener('keyup', (e) => {
+    if (e.code === 'Space' && !isInputFocused()) { e.preventDefault(); pttStop(); }
+  });
+  function isInputFocused() {
+    const el = document.activeElement;
+    return el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.tagName === 'SELECT' || el.isContentEditable);
+  }
+
   estopBtn.addEventListener('click', () => {
     pttDown = false;
     pttBtn.classList.remove('active');
@@ -1798,14 +1810,17 @@
   function handleActivatorState(msg) {
     const refs = msg.parkRefs || [];
     phoneGrid = msg.grid || '';
-    // If desktop is in activator mode with a park, auto-start activation
+    // If desktop is in activator mode with a park, pre-fill the setup form
+    // (don't auto-start — user must tap Start to begin a new activation)
     if (msg.appMode === 'activator' && refs.length > 0 && refs[0].ref) {
-      if (!activationRunning || activationRef !== refs[0].ref) {
-        activationRef = refs[0].ref;
+      if (!activationRunning) {
+        setupRefInput.value = refs[0].ref;
+        setupRefName.textContent = refs[0].name || '';
         activationName = refs[0].name || '';
         activationSig = 'POTA';
         activationType = 'pota';
-        beginActivation();
+        startActivationBtn.disabled = false;
+        document.querySelectorAll('.setup-type-btn').forEach(b => b.classList.toggle('active', b.dataset.type === 'pota'));
       }
     }
   }
