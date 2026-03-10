@@ -1038,6 +1038,25 @@
     }
   });
 
+  // --- Bluetooth earbud PTT (Media Session API) ---
+  // Pixel Buds, AirPods, etc. fire play/pause on single tap.
+  // Toggle PTT: tap to start transmitting, tap again to stop.
+  if ('mediaSession' in navigator) {
+    navigator.mediaSession.setActionHandler('pause', () => {
+      if (!audioEnabled) return;
+      if (pttDown) pttStop(); else pttStart();
+      // Keep media session in "playing" state so next tap fires again
+      navigator.mediaSession.playbackState = 'playing';
+      if (remoteAudio) remoteAudio.play().catch(() => {});
+    });
+    navigator.mediaSession.setActionHandler('play', () => {
+      if (!audioEnabled) return;
+      if (pttDown) pttStop(); else pttStart();
+      navigator.mediaSession.playbackState = 'playing';
+      if (remoteAudio) remoteAudio.play().catch(() => {});
+    });
+  }
+
   // --- Settings Overlay ---
   rigCtrlToggle.addEventListener('click', () => {
     settingsOverlay.classList.remove('hidden');
@@ -1335,6 +1354,11 @@
       audioBtn.classList.add('active');
       audioDot.classList.remove('hidden');
       volBoostBtn.classList.remove('hidden');
+      // Activate Media Session so Bluetooth earbud buttons work for PTT
+      if ('mediaSession' in navigator) {
+        navigator.mediaSession.metadata = new MediaMetadata({ title: 'ECHOCAT', artist: 'POTACAT' });
+        navigator.mediaSession.playbackState = 'playing';
+      }
     } catch (err) {
       console.error('Audio error:', err);
       setAudioStatus('Error');
