@@ -327,6 +327,10 @@ const parksStatsToggleBtn = document.getElementById('parks-stats-toggle');
 const parksStatsCloseBtn = document.getElementById('parks-stats-close');
 let parksStatsOpen = false;
 const setEnableDxcc = document.getElementById('set-enable-dxcc');
+const setSotaUpload = document.getElementById('set-sota-upload');
+const sotaUploadConfig = document.getElementById('sota-upload-config');
+const setSotaUsername = document.getElementById('set-sota-username');
+const setSotaPassword = document.getElementById('set-sota-password');
 const distHeader = document.getElementById('dist-header');
 const utcClockEl = document.getElementById('utc-clock');
 const sfiStatusEl = document.getElementById('sfi-status');
@@ -1866,6 +1870,10 @@ setSmartSdrSpots.addEventListener('change', () => {
 // TCI checkbox toggles config visibility
 setTciSpots.addEventListener('change', () => {
   tciConfig.classList.toggle('hidden', !setTciSpots.checked);
+});
+// SOTA upload checkbox toggles config visibility
+setSotaUpload.addEventListener('change', () => {
+  sotaUploadConfig.classList.toggle('hidden', !setSotaUpload.checked);
 });
 
 // ECHOCAT checkbox toggles config visibility
@@ -5377,6 +5385,10 @@ async function openSettingsDialog() {
   splitOrientationConfig.classList.toggle('hidden', !setEnableSplitView.checked);
   document.getElementById('set-split-orientation').value = s.splitOrientation || 'horizontal';
   setEnableDxcc.checked = s.enableDxcc === true;
+  setSotaUpload.checked = s.sotaUpload === true;
+  setSotaUsername.value = s.sotaUsername || '';
+  setSotaPassword.value = s.sotaPassword || '';
+  sotaUploadConfig.classList.toggle('hidden', !s.sotaUpload);
   setPotaParksPath.value = s.potaParksPath || '';
   potaParksClearBtn.style.display = s.potaParksPath ? '' : 'none';
   setHideWorkedParks.checked = s.hideWorkedParks === true;
@@ -5503,6 +5515,9 @@ settingsSave.addEventListener('click', async () => {
   const enableSplitViewVal = setEnableSplitView.checked;
   const splitOrientationVal = document.getElementById('set-split-orientation').value;
   const dxccEnabled = setEnableDxcc.checked;
+  const sotaUploadEnabled = setSotaUpload.checked;
+  const sotaUsernameVal = setSotaUsername.value.trim();
+  const sotaPasswordVal = setSotaPassword.value;
   const licenseClassVal = setLicenseClass.value;
   const hideOob = setHideOutOfBand.checked;
   const hideWorkedEnabled = setHideWorked.checked;
@@ -5606,6 +5621,9 @@ settingsSave.addEventListener('click', async () => {
     enableSplitView: enableSplitViewVal,
     splitOrientation: splitOrientationVal,
     enableDxcc: dxccEnabled,
+    sotaUpload: sotaUploadEnabled,
+    sotaUsername: sotaUsernameVal,
+    sotaPassword: sotaPasswordVal,
     licenseClass: licenseClassVal,
     hideOutOfBand: hideOob,
     hideWorked: hideWorkedEnabled,

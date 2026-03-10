@@ -981,6 +981,19 @@
             <div id="logbook-wavelog-help" class="help-text" style="margin-top:4px;">In Wavelog: go to API Keys and create a key with read-write access. The Station Profile ID is in the URL when editing a station profile (e.g. /stationsetup/edit/1 means ID is 1).</div>
           </div>
         </div>
+        <div style="margin-top:10px;border-top:1px solid var(--border);padding-top:8px;">
+          <label class="checkbox-label"><input type="checkbox" id="set-sota-upload"> Auto-upload SOTA chaser QSOs to SOTAdata</label>
+          <span class="help-text" style="margin-left:12px;display:block;">When you log a SOTA contact, automatically submit it to your SOTAdata chaser log.</span>
+          <div id="sota-upload-config" class="hidden" style="margin:6px 0 0 12px;">
+            <label style="display:block;margin-bottom:4px;">SOTAdata Username:
+              <input type="text" id="set-sota-username" style="width:180px;" placeholder="your SSO username" autocomplete="off">
+            </label>
+            <label style="display:block;">SOTAdata Password:
+              <input type="password" id="set-sota-password" style="width:180px;" placeholder="your SSO password" autocomplete="off">
+            </label>
+            <span class="help-text" style="display:block;margin-top:4px;">Use your <a href="https://www.sotadata.org.uk" target="_blank" style="color:var(--link)">sotadata.org.uk</a> login credentials.</span>
+          </div>
+        </div>
       </div>
     </fieldset>
     <!-- Events & Awards -->

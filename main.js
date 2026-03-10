@@ -7,7 +7,8 @@ process.stdout?.on('error', () => {});
 process.stderr?.on('error', () => {});
 const { execFile, spawn } = require('child_process');
 const { fetchSpots: fetchPotaSpots } = require('./lib/pota');
-const { fetchSpots: fetchSotaSpots, fetchSummitCoordsBatch, summitCache, loadAssociations, getAssociationName } = require('./lib/sota');
+const { fetchSpots: fetchSotaSpots, fetchSummitCoordsBatch, summitCache, loadAssociations, getAssociationName, SotaUploader } = require('./lib/sota');
+const sotaUploader = new SotaUploader();
 const { CatClient, RigctldClient, listSerialPorts } = require('./lib/cat');
 const { gridToLatLon, haversineDistanceMiles, bearing } = require('./lib/grid');
 const { freqToBand } = require('./lib/bands');
@@ -1176,6 +1177,23 @@ async function saveQsoRecord(qsoData) {
     } catch (respotErr) {
       console.error('DX Cluster spot failed:', respotErr.message);
       return { success: true, dxcRespotError: respotErr.message };
+    }
+  }
+
+  // Auto-upload chaser QSO to SOTAdata if enabled
+  if (settings.sotaUpload && qsoData.sig === 'SOTA' && qsoData.sigInfo && sotaUploader.configured) {
+    try {
+      sendCatLog(`[SOTA] Uploading chase: ${qsoData.callsign} @ ${qsoData.sigInfo}`);
+      const sotaResult = await sotaUploader.uploadChase(qsoData);
+      if (sotaResult.success) {
+        sendCatLog(`[SOTA] Chase uploaded successfully`);
+      } else {
+        sendCatLog(`[SOTA] Upload failed: ${sotaResult.error}`);
+        console.error('SOTA upload failed:', sotaResult.error);
+      }
+    } catch (sotaErr) {
+      sendCatLog(`[SOTA] Upload error: ${sotaErr.message}`);
+      console.error('SOTA upload error:', sotaErr.message);
     }
   }
 
@@ -4223,6 +4241,10 @@ app.whenReady().then(() => {
   if (settings.enableQrz && settings.qrzUsername && settings.qrzPassword) {
     qrz.configure(settings.qrzUsername, settings.qrzPassword);
   }
+  // Configure SOTA uploader
+  if (settings.sotaUpload && settings.sotaUsername && settings.sotaPassword) {
+    sotaUploader.configure(settings.sotaUsername, settings.sotaPassword);
+  }
   // Load QRZ disk cache
   const qrzCachePath = path.join(app.getPath('userData'), 'qrz-cache.json');
   qrz.loadCache(qrzCachePath);
@@ -5086,6 +5108,11 @@ app.whenReady().then(() => {
     // Reconfigure QRZ client if credentials changed
     if (newSettings.enableQrz) {
       qrz.configure(newSettings.qrzUsername || '', newSettings.qrzPassword || '');
+    }
+
+    // Reconfigure SOTA uploader if credentials changed
+    if (newSettings.sotaUpload && newSettings.sotaUsername) {
+      sotaUploader.configure(newSettings.sotaUsername, newSettings.sotaPassword || '');
     }
 
     return settings;
