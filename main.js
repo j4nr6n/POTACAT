@@ -4018,8 +4018,16 @@ function tuneRadio(freqKhz, mode, brng, { clearXit } = {}) {
   }
 
   if (!cat || !cat.connected) return;
-  sendCatLog(`tune: freq=${freqKhz}kHz → ${freqHz}Hz mode=${mode} split=${!!settings.enableSplit} filter=${filterWidth}`);
-  cat.tune(freqHz, mode, { split: settings.enableSplit, filterWidth });
+
+  // For non-Flex radios (serial/rigctld), apply CW XIT offset directly to tune frequency
+  // (Flex radios use SmartSDR setSliceXit API instead)
+  let tuneFreqHz = freqHz;
+  if (wantXit && !(smartSdr && smartSdr.connected && settings.catTarget && settings.catTarget.type === 'tcp')) {
+    tuneFreqHz = freqHz + settings.cwXit;
+  }
+
+  sendCatLog(`tune: freq=${freqKhz}kHz → ${tuneFreqHz}Hz mode=${mode} split=${!!settings.enableSplit} filter=${filterWidth}${wantXit ? ` xit=${settings.cwXit}` : ''}`);
+  cat.tune(tuneFreqHz, mode, { split: settings.enableSplit, filterWidth });
 
   // Set or clear XIT via SmartSDR API (works even when tuning via CAT)
   if (smartSdr && smartSdr.connected && settings.catTarget && settings.catTarget.type === 'tcp') {
