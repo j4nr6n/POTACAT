@@ -285,7 +285,7 @@ function spawnRigctld(target, portOverride) {
     const args = [
       '-m', String(target.rigId),
       '-r', target.serialPort,
-      '-s', String(target.baudRate),
+      '-s', String(target.baudRate || 9600),
       '-t', port,
     ];
     if (target.dtrOff) args.push('--set-conf=dtr_state=OFF,rts_state=OFF');

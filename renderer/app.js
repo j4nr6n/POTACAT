@@ -1093,7 +1093,7 @@ function buildCatTargetFromForm() {
       type: 'rigctld',
       rigId: parseInt(setRigModel.value, 10),
       serialPort: getEffectivePort(),
-      baudRate: parseInt(setRigBaud.value, 10),
+      baudRate: parseInt(setRigBaud.value, 10) || 9600,
       dtrOff: setRigDtrOff.checked,
       rigctldPort: parseInt(setRigctldPort.value, 10) || 4532,
     };
@@ -7618,7 +7618,7 @@ function buildWelcomeCatTarget() {
       type: 'rigctld',
       rigId: parseInt(document.getElementById('welcome-rig-model').value, 10),
       serialPort: manual || document.getElementById('welcome-rig-port').value,
-      baudRate: parseInt(document.getElementById('welcome-rig-baud').value, 10),
+      baudRate: parseInt(document.getElementById('welcome-rig-baud').value, 10) || 9600,
       dtrOff: document.getElementById('welcome-rig-dtr-off').checked,
     };
   } else if (type === 'rigctldnet') {
