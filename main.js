@@ -19,6 +19,7 @@ const { RbnClient } = require('./lib/rbn');
 const { appendQso, buildAdifRecord, appendImportedQso, appendRawQso, rewriteAdifFile, ADIF_HEADER, adifField } = require('./lib/adif-writer');
 const { SmartSdrClient, setColorblindMode: setSmartSdrColorblind } = require('./lib/smartsdr');
 const { TciClient, setTciColorblindMode } = require('./lib/tci');
+const { AntennaGeniusClient } = require('./lib/antenna-genius');
 const { IambicKeyer } = require('./lib/keyer');
 const { parsePotaParksCSV } = require('./lib/pota-parks');
 const { WsjtxClient, encodeHeartbeat, encodeLoggedAdif, encodeQsoLogged } = require('./lib/wsjtx');
@@ -81,6 +82,8 @@ let smartSdr = null;
 let smartSdrPushTimer = null; // throttle timer for SmartSDR spot pushes
 let tciClient = null;
 let tciPushTimer = null; // throttle timer for TCI spot pushes
+let agClient = null; // 4O3A Antenna Genius client
+let agLastBand = null; // last band we switched to (avoid redundant commands)
 let workedQsos = new Map(); // callsign → [{date, ref}] from QSO log (all QSOs, not just confirmed)
 let workedParks = new Map(); // reference → park data from POTA parks CSV
 let wsjtx = null;
@@ -1515,6 +1518,81 @@ function disconnectTci() {
     tciClient.disconnect();
     tciClient = null;
   }
+}
+
+// --- 4O3A Antenna Genius ---
+function connectAntennaGenius() {
+  disconnectAntennaGenius();
+  if (!settings.enableAntennaGenius || !settings.agHost) return;
+  agClient = new AntennaGeniusClient();
+  agLastBand = null;
+  agClient.on('connected', () => {
+    sendCatLog('[AG] Connected to Antenna Genius');
+    agClient.subscribePortStatus();
+    sendAgStatus();
+  });
+  agClient.on('disconnected', () => {
+    sendCatLog('[AG] Disconnected from Antenna Genius');
+    sendAgStatus();
+  });
+  agClient.on('port-status', (status) => {
+    if (win && !win.isDestroyed()) {
+      win.webContents.send('ag-port-status', status);
+    }
+  });
+  agClient.on('antenna-list', (names) => {
+    if (win && !win.isDestroyed()) {
+      win.webContents.send('ag-antenna-names', names);
+    }
+  });
+  agClient.on('error', (err) => {
+    // Suppress ECONNREFUSED noise during reconnect
+    if (err.code !== 'ECONNREFUSED') {
+      console.error('AG:', err.message);
+    }
+  });
+  agClient.connect(settings.agHost, 9007);
+}
+
+function disconnectAntennaGenius() {
+  agLastBand = null;
+  if (agClient) {
+    agClient.removeAllListeners();
+    agClient.disconnect();
+    agClient = null;
+  }
+}
+
+function sendAgStatus() {
+  if (win && !win.isDestroyed()) {
+    win.webContents.send('ag-status', {
+      connected: !!(agClient && agClient.connected),
+    });
+  }
+}
+
+/**
+ * Switch antenna based on frequency. Called from tuneRadio().
+ * @param {number} freqKhz - Frequency in kHz
+ */
+function agSwitchForFreq(freqKhz) {
+  if (!agClient || !agClient.connected) return;
+  if (!settings.agBandMap || typeof settings.agBandMap !== 'object') return;
+
+  const freqMhz = freqKhz / 1000;
+  const band = freqToBand(freqMhz);
+  if (!band) return;
+
+  // Don't re-send if already on this band
+  if (band === agLastBand) return;
+  agLastBand = band;
+
+  const antenna = settings.agBandMap[band];
+  if (!antenna) return; // no mapping for this band
+
+  const radioPort = settings.agRadioPort || 1;
+  sendCatLog(`[AG] Band ${band} → antenna ${antenna} (port ${radioPort === 1 ? 'A' : 'B'})`);
+  agClient.selectAntenna(radioPort, antenna);
 }
 
 // --- ECHOCAT ---
@@ -4110,6 +4188,11 @@ function tuneRadio(freqKhz, mode, brng, { clearXit } = {}) {
     sendRotorBearing(Math.round(brng));
   }
 
+  // Antenna Genius: switch antenna based on band
+  if (settings.enableAntennaGenius) {
+    agSwitchForFreq(freqKhz);
+  }
+
   if (settings.enableWsjtx && (!cat || !cat.connected)) {
     if (smartSdr && smartSdr.connected && settings.catTarget && settings.catTarget.type === 'tcp') {
       const sliceIndex = (settings.catTarget.port || 5002) - 5002;
@@ -4220,6 +4303,7 @@ app.whenReady().then(() => {
   if (settings.enableRbn) connectRbn();
   connectSmartSdr(); // connects if smartSdrSpots, CW keyer, or WSJT-X+Flex
   connectTci();
+  connectAntennaGenius();
   if (settings.enableRemote) connectRemote();
   if (settings.enableCwKeyer) connectKeyer();
   if (settings.enableWsjtx) connectWsjtx();
@@ -4963,6 +5047,9 @@ app.whenReady().then(() => {
       (has('tciHost') && newSettings.tciHost !== settings.tciHost) ||
       (has('tciPort') && newSettings.tciPort !== settings.tciPort);
 
+    const agChanged = (has('enableAntennaGenius') && newSettings.enableAntennaGenius !== settings.enableAntennaGenius) ||
+      (has('agHost') && newSettings.agHost !== settings.agHost);
+
     const wsjtxChanged = (has('enableWsjtx') && newSettings.enableWsjtx !== settings.enableWsjtx) ||
       (has('wsjtxPort') && newSettings.wsjtxPort !== settings.wsjtxPort);
 
@@ -5023,6 +5110,11 @@ app.whenReady().then(() => {
     // Reconnect TCI if settings changed
     if (tciChanged) {
       connectTci();
+    }
+
+    // Reconnect Antenna Genius if settings changed
+    if (agChanged) {
+      connectAntennaGenius();
     }
 
     // Reconnect ECHOCAT if settings changed
@@ -5937,6 +6029,7 @@ function gracefulCleanup() {
   try { disconnectWsjtx(); } catch {}
   try { disconnectSmartSdr(); } catch {}
   try { disconnectTci(); } catch {}
+  try { disconnectAntennaGenius(); } catch {}
   try { disconnectRemote(); } catch {}
   try { disconnectKeyer(); } catch {}
   try { hamrsBridge.stop(); } catch {}

@@ -173,6 +173,12 @@ const setEnableRotor = document.getElementById('set-enable-rotor');
 const rotorConfig = document.getElementById('rotor-config');
 const setRotorHost = document.getElementById('set-rotor-host');
 const setRotorPort = document.getElementById('set-rotor-port');
+const setEnableAg = document.getElementById('set-enable-ag');
+const agConfig = document.getElementById('ag-config');
+const setAgHost = document.getElementById('set-ag-host');
+const setAgRadioPort = document.getElementById('set-ag-radio-port');
+const agBandMapEl = document.getElementById('ag-band-map');
+const agStatusEl = document.getElementById('ag-status');
 const setVerboseLog = document.getElementById('set-verbose-log');
 const setLightIcon = document.getElementById('set-light-icon');
 const setEnableSplitView = document.getElementById('set-enable-split-view');
@@ -1856,6 +1862,59 @@ setEnablePskr.addEventListener('change', () => {
 setEnableRotor.addEventListener('change', () => {
   rotorConfig.classList.toggle('hidden', !setEnableRotor.checked);
 });
+// Antenna Genius checkbox toggles config visibility
+setEnableAg.addEventListener('change', () => {
+  agConfig.classList.toggle('hidden', !setEnableAg.checked);
+});
+
+// Antenna Genius band map UI
+const AG_BANDS = ['160m','80m','60m','40m','30m','20m','17m','15m','12m','10m','6m','2m','70cm'];
+function buildAgBandMap(bandMap) {
+  agBandMapEl.innerHTML = '';
+  for (const band of AG_BANDS) {
+    const label = document.createElement('span');
+    label.textContent = band;
+    label.style.textAlign = 'right';
+    label.style.paddingRight = '4px';
+    const select = document.createElement('select');
+    select.id = `ag-band-${band}`;
+    select.style.width = '100%';
+    select.innerHTML = '<option value="">—</option>';
+    for (let i = 1; i <= 8; i++) {
+      const opt = document.createElement('option');
+      opt.value = String(i);
+      opt.textContent = agAntennaNames[i] ? `${i}: ${agAntennaNames[i]}` : String(i);
+      select.appendChild(opt);
+    }
+    if (bandMap && bandMap[band]) select.value = String(bandMap[band]);
+    agBandMapEl.appendChild(label);
+    agBandMapEl.appendChild(select);
+  }
+}
+let agAntennaNames = {};
+function getAgBandMap() {
+  const map = {};
+  for (const band of AG_BANDS) {
+    const sel = document.getElementById(`ag-band-${band}`);
+    if (sel && sel.value) map[band] = parseInt(sel.value, 10);
+  }
+  return map;
+}
+// IPC: Antenna Genius status + antenna names
+if (window.api.onAgStatus) {
+  window.api.onAgStatus((status) => {
+    agStatusEl.textContent = status.connected ? 'Connected' : '';
+    agStatusEl.style.color = status.connected ? '#4ecca3' : '';
+  });
+}
+if (window.api.onAgAntennaNames) {
+  window.api.onAgAntennaNames((names) => {
+    agAntennaNames = names;
+    // Rebuild dropdowns with antenna names, preserving current selections
+    const currentMap = getAgBandMap();
+    buildAgBandMap(currentMap);
+  });
+}
 
 // Split view checkbox toggles orientation config visibility
 setEnableSplitView.addEventListener('change', () => {
@@ -5285,6 +5344,11 @@ async function openSettingsDialog() {
   setRotorHost.value = s.rotorHost || '127.0.0.1';
   setRotorPort.value = s.rotorPort || 12040;
   rotorConfig.classList.toggle('hidden', !s.enableRotor);
+  setEnableAg.checked = s.enableAntennaGenius === true;
+  setAgHost.value = s.agHost || '';
+  setAgRadioPort.value = s.agRadioPort || '1';
+  buildAgBandMap(s.agBandMap || {});
+  agConfig.classList.toggle('hidden', !s.enableAntennaGenius);
   setEnableSplit.checked = s.enableSplit === true;
   setVerboseLog.checked = s.verboseLog === true;
   setLightIcon.checked = s.lightIcon === true;
@@ -5525,6 +5589,10 @@ settingsSave.addEventListener('click', async () => {
   const rotorEnabled = setEnableRotor.checked;
   const rotorHostVal = setRotorHost.value.trim() || '127.0.0.1';
   const rotorPortVal = parseInt(setRotorPort.value, 10) || 12040;
+  const agEnabled = setEnableAg.checked;
+  const agHostVal = setAgHost.value.trim();
+  const agRadioPortVal = parseInt(setAgRadioPort.value, 10) || 1;
+  const agBandMapVal = getAgBandMap();
   const enableSplitEnabled = setEnableSplit.checked;
   const verboseLogEnabled = setVerboseLog.checked;
   const lightIconEnabled = setLightIcon.checked;
@@ -5631,6 +5699,10 @@ settingsSave.addEventListener('click', async () => {
     enableRotor: rotorEnabled,
     rotorHost: rotorHostVal,
     rotorPort: rotorPortVal,
+    enableAntennaGenius: agEnabled,
+    agHost: agHostVal,
+    agRadioPort: agRadioPortVal,
+    agBandMap: agBandMapVal,
     enableSplit: enableSplitEnabled,
     verboseLog: verboseLogEnabled,
     lightIcon: lightIconEnabled,
