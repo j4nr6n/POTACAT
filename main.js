@@ -25,6 +25,8 @@ const { parsePotaParksCSV } = require('./lib/pota-parks');
 const { WsjtxClient, encodeHeartbeat, encodeLoggedAdif, encodeQsoLogged } = require('./lib/wsjtx');
 const { PskrClient } = require('./lib/pskreporter');
 const { RemoteServer } = require('./lib/remote-server');
+const { loadClubUsers, hashPasswords, hasPlaintextPasswords } = require('./lib/club-users');
+const { createAuditLogger } = require('./lib/club-audit');
 const { fetchSpots: fetchWwffSpots } = require('./lib/wwff');
 const { fetchSpots: fetchLlotaSpots } = require('./lib/llota');
 const { postWwffRespot } = require('./lib/wwff-respot');
@@ -1743,6 +1745,8 @@ function connectRemote() {
     if (win && !win.isDestroyed()) {
       win.webContents.send('reload-prefs');
     }
+    // Track active rig for club schedule advisory
+    if (remoteServer._clubMode) remoteServer._activeRigId = rig.id;
     // Confirm back to phone
     const rigs = (settings.rigs || []).map(r => ({ id: r.id, name: r.name }));
     remoteServer.sendRigsToClient(rigs, rig.id);
@@ -2130,6 +2134,13 @@ function connectRemote() {
       if (settings.myCallsign) {
         qsoData.stationCallsign = settings.myCallsign.toUpperCase();
       }
+      // Club mode: OPERATOR = individual member callsign
+      if (settings.clubMode && remoteServer) {
+        const member = remoteServer.getAuthenticatedMember();
+        if (member) {
+          qsoData.operator = member.callsign;
+        }
+      }
       if (settings.txPower) {
         qsoData.txPower = String(settings.txPower);
       }
@@ -2239,8 +2250,16 @@ function connectRemote() {
     settings.remoteToken = token;
     saveSettings(settings);
   }
+  // Club Station Mode
+  if (settings.clubMode && settings.clubCsvPath) {
+    const auditPath = settings.clubAuditPath ||
+      path.join(app.getPath('userData'), 'club-audit.csv');
+    const auditLogger = createAuditLogger(auditPath);
+    remoteServer.setClubMode(true, settings.clubCsvPath, auditLogger, settings.rigs || [], settings.activeRigId);
+  }
+
   remoteServer.start(port, token, {
-    requireToken,
+    requireToken: settings.clubMode ? true : requireToken, // club mode always requires auth
     pttSafetyTimeout: settings.remotePttTimeout || 180,
     rendererPath: path.join(app.getAppPath(), 'renderer'),
     certDir: app.getPath('userData'),
@@ -5172,7 +5191,9 @@ app.whenReady().then(() => {
     const remoteChanged = (has('enableRemote') && newSettings.enableRemote !== settings.enableRemote) ||
       (has('remotePort') && newSettings.remotePort !== settings.remotePort) ||
       (has('remoteToken') && newSettings.remoteToken !== settings.remoteToken) ||
-      (has('remoteRequireToken') && newSettings.remoteRequireToken !== settings.remoteRequireToken);
+      (has('remoteRequireToken') && newSettings.remoteRequireToken !== settings.remoteRequireToken) ||
+      (has('clubMode') && newSettings.clubMode !== settings.clubMode) ||
+      (has('clubCsvPath') && newSettings.clubCsvPath !== settings.clubCsvPath);
 
     const iconChanged = has('lightIcon') && newSettings.lightIcon !== settings.lightIcon;
 
@@ -5412,6 +5433,57 @@ app.whenReady().then(() => {
   // --- QSO Logging IPC ---
   ipcMain.handle('get-default-log-path', () => {
     return path.join(app.getPath('userData'), 'potacat_qso_log.adi');
+  });
+
+  // --- Club Station Mode IPC ---
+  ipcMain.handle('choose-club-csv-file', async () => {
+    const result = await dialog.showOpenDialog(win, {
+      title: 'Choose Club Users CSV',
+      filters: [
+        { name: 'CSV Files', extensions: ['csv'] },
+        { name: 'All Files', extensions: ['*'] },
+      ],
+      properties: ['openFile'],
+    });
+    if (result.canceled || !result.filePaths.length) return null;
+    return result.filePaths[0];
+  });
+
+  ipcMain.handle('preview-club-csv', async (_e, csvPath) => {
+    if (!csvPath) return { members: [], radioColumns: [], errors: ['No file path'] };
+    return loadClubUsers(csvPath);
+  });
+
+  ipcMain.handle('hash-club-passwords', async (_e, csvPath) => {
+    if (!csvPath) return { hashed: 0, alreadyHashed: 0, error: 'No file path' };
+    return hashPasswords(csvPath);
+  });
+
+  ipcMain.handle('create-club-csv', async (_e, rigNames) => {
+    // Default to same directory as the logbook file
+    const logPath = settings.adifLogPath || path.join(app.getPath('userData'), 'potacat_qso_log.adi');
+    const logDir = path.dirname(logPath);
+    const defaultPath = path.join(logDir, 'club_users.csv');
+    const result = await dialog.showSaveDialog(win, {
+      title: 'Create Club Users CSV',
+      defaultPath,
+      filters: [
+        { name: 'CSV Files', extensions: ['csv'] },
+        { name: 'All Files', extensions: ['*'] },
+      ],
+    });
+    if (result.canceled) return null;
+    // Build header with fixed columns + rig names + schedule
+    const fixed = ['firstname', 'lastname', 'callsign', 'passwd', 'license', 'admin', 'user'];
+    const header = fixed.concat(rigNames || []).concat(['schedule']).join(',');
+    // Write header + one example row
+    const rigXs = (rigNames || []).map(() => 'x').join(',');
+    const exampleSched = rigNames && rigNames.length > 0
+      ? '"Mon 19:00-21:00 ' + rigNames[0] + '"'
+      : '""';
+    const example = 'Jane,Doe,W1AW,changeme,Extra,x,,' + rigXs + ',' + exampleSched;
+    fs.writeFileSync(result.filePath, header + '\n' + example + '\n');
+    return result.filePath;
   });
 
   ipcMain.handle('choose-log-file', async (_e, currentPath) => {

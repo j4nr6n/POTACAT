@@ -455,6 +455,7 @@ const clubHashPasswords = document.getElementById('club-hash-passwords');
 const clubCsvCreate = document.getElementById('club-csv-create');
 const clubHashStatus = document.getElementById('club-hash-status');
 const clubPreview = document.getElementById('club-preview');
+const clubSchedule = document.getElementById('club-schedule');
 const logDialog = document.getElementById('log-dialog');
 const logCallsign = document.getElementById('log-callsign');
 const logOpName = document.getElementById('log-op-name');
@@ -2039,15 +2040,21 @@ clubHashPasswords.addEventListener('click', async () => {
   }
 });
 
+let clubScheduleDay = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][new Date().getDay()];
+let lastClubData = null;
+
 async function refreshClubPreview(csvPath) {
-  if (!csvPath) { clubPreview.innerHTML = ''; return; }
+  if (!csvPath) { clubPreview.innerHTML = ''; clubSchedule.innerHTML = ''; return; }
   const data = await window.api.previewClubCsv(csvPath);
+  lastClubData = data;
   if (data.errors && data.errors.length > 0) {
     clubPreview.innerHTML = '<div style="color:#e94560">' + data.errors.join('<br>') + '</div>';
+    clubSchedule.innerHTML = '';
     return;
   }
   if (!data.members || data.members.length === 0) {
     clubPreview.innerHTML = '<div style="color:#aaa">No members found</div>';
+    clubSchedule.innerHTML = '';
     return;
   }
   const radioCols = data.radioColumns || [];
@@ -2074,6 +2081,77 @@ async function refreshClubPreview(csvPath) {
   }
   html += '</table>';
   clubPreview.innerHTML = html;
+
+  // Schedule view
+  if (data.hasSchedule) {
+    renderClubSchedule(data);
+  } else {
+    clubSchedule.innerHTML = '';
+  }
+}
+
+function renderClubSchedule(data) {
+  if (!data || !data.members) { clubSchedule.innerHTML = ''; return; }
+  const days = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+  const todayName = days[new Date().getDay()];
+  const nowMin = new Date().getHours() * 60 + new Date().getMinutes();
+
+  // Day picker tabs
+  let html = '<div style="margin-top:4px;font-size:12px;font-weight:600;color:#aaa;">Schedule</div>';
+  html += '<div style="display:flex;gap:2px;margin:4px 0;">';
+  for (const d of days) {
+    const active = d === clubScheduleDay;
+    const isToday = d === todayName;
+    const bg = active ? '#4fc3f7' : 'transparent';
+    const fg = active ? '#000' : (isToday ? '#4fc3f7' : '#aaa');
+    const border = isToday && !active ? '1px solid #4fc3f7' : '1px solid transparent';
+    html += `<button type="button" class="club-day-btn" data-day="${d}" style="padding:2px 6px;font-size:11px;border-radius:4px;cursor:pointer;background:${bg};color:${fg};border:${border};font-weight:${active ? '700' : '400'}">${d}</button>`;
+  }
+  html += '</div>';
+
+  // Collect slots for selected day
+  const slots = [];
+  for (const m of data.members) {
+    if (!m.schedule) continue;
+    for (const s of m.schedule) {
+      if (s.day === clubScheduleDay) {
+        slots.push({ callsign: m.callsign, firstname: m.firstname, ...s });
+      }
+    }
+  }
+  slots.sort((a, b) => (a.startH * 60 + a.startM) - (b.startH * 60 + b.startM));
+
+  if (slots.length === 0) {
+    html += '<div style="font-size:11px;color:#666;padding:4px 0;">No slots scheduled for ' + clubScheduleDay + '</div>';
+  } else {
+    html += '<table style="width:100%;border-collapse:collapse;font-size:11px;margin-top:2px;">';
+    html += '<tr style="border-bottom:1px solid #444;"><th style="text-align:left;padding:2px 4px;">Time</th><th style="text-align:left;padding:2px 4px;">Radio</th><th style="text-align:left;padding:2px 4px;">Operator</th></tr>';
+    for (const s of slots) {
+      const startStr = String(s.startH).padStart(2, '0') + ':' + String(s.startM).padStart(2, '0');
+      const endStr = String(s.endH).padStart(2, '0') + ':' + String(s.endM).padStart(2, '0');
+      const slotStart = s.startH * 60 + s.startM;
+      const slotEnd = s.endH * 60 + s.endM;
+      const isNow = clubScheduleDay === todayName && nowMin >= slotStart && nowMin < slotEnd;
+      const rowStyle = isNow ? 'background:rgba(79,195,247,0.15);' : '';
+      const nowDot = isNow ? '<span style="color:#4ecca3;margin-right:3px;" title="Active now">\u25CF</span>' : '';
+      html += `<tr style="${rowStyle}">`;
+      html += `<td style="padding:2px 4px;">${nowDot}${startStr}\u2013${endStr}</td>`;
+      html += `<td style="padding:2px 4px;">${s.radio}</td>`;
+      html += `<td style="padding:2px 4px;color:#4fc3f7;">${s.callsign} <span style="color:#aaa;">${s.firstname}</span></td>`;
+      html += '</tr>';
+    }
+    html += '</table>';
+  }
+
+  clubSchedule.innerHTML = html;
+
+  // Day picker click handlers
+  clubSchedule.querySelectorAll('.club-day-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      clubScheduleDay = btn.dataset.day;
+      renderClubSchedule(data);
+    });
+  });
 }
 
 async function populateRigAudioDevices(restoreIn, restoreOut) {
@@ -5711,6 +5789,7 @@ async function openSettingsDialog() {
     refreshClubPreview(s.clubCsvPath);
   } else {
     clubPreview.innerHTML = '';
+    clubSchedule.innerHTML = '';
   }
   updateSettingsConnBar();
   setDisableAutoUpdate.checked = s.disableAutoUpdate === true;

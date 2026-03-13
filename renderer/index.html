@@ -1293,6 +1293,24 @@
         </div>
         <div id="remote-url-display" style="margin-top:8px;font-family:monospace;font-size:12px;"></div>
         <span class="help-text">To use ECHOCAT securely outside your home network, install <a href="https://tailscale.com" target="_blank" style="color:#4fc3f7;">Tailscale</a> on both your shack computer and phone. Audio, tuning, and PTT are all encrypted over the Tailscale VPN.</span>
+        <!-- Club Station Mode -->
+        <div style="margin-top:12px;border-top:1px solid #333;padding-top:10px;">
+          <label class="checkbox-label"><input type="checkbox" id="set-club-mode"> Club Station Mode</label>
+          <span class="help-text" style="margin-left:12px;display:block;">Members log in with callsign + password. Band enforcement by license class. Audit logging.</span>
+          <div id="club-config" class="hidden" style="margin-top:8px;margin-left:12px;">
+            <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">
+              <label>Members CSV:
+                <input type="text" id="set-club-csv-path" readonly placeholder="Choose file..." style="width:200px;cursor:pointer;">
+              </label>
+              <button type="button" id="club-csv-browse" style="padding:2px 8px;">Browse</button>
+              <button type="button" id="club-csv-create" style="padding:2px 8px;">Create New</button>
+            </div>
+            <button type="button" id="club-hash-passwords" style="padding:2px 10px;margin-bottom:8px;">Hash Passwords</button>
+            <span id="club-hash-status" style="font-size:11px;color:#aaa;margin-left:8px;"></span>
+            <div id="club-preview" style="margin-top:8px;max-height:180px;overflow-y:auto;font-size:11px;"></div>
+            <div id="club-schedule" style="margin-top:10px;"></div>
+          </div>
+        </div>
       </div>
     </fieldset>
     <!-- 11. About (merged Privacy + Diagnostics) -->

@@ -143,6 +143,11 @@ contextBridge.exposeInMainWorld('api', {
   onCwText: (cb) => ipcRenderer.on('cw-text', (_e, data) => cb(data)),
   // Remote Access
   getLocalIPs: () => ipcRenderer.invoke('get-local-ips'),
+  // Club Station Mode
+  chooseClubCsvFile: () => ipcRenderer.invoke('choose-club-csv-file'),
+  previewClubCsv: (csvPath) => ipcRenderer.invoke('preview-club-csv', csvPath),
+  hashClubPasswords: (csvPath) => ipcRenderer.invoke('hash-club-passwords', csvPath),
+  createClubCsv: (rigNames) => ipcRenderer.invoke('create-club-csv', rigNames),
   onRemoteTxState: (cb) => ipcRenderer.on('remote-tx-state', (_e, state) => cb(state)),
   onRemoteStatus: (cb) => ipcRenderer.on('remote-status', (_e, s) => cb(s)),
   onReloadPrefs: (cb) => ipcRenderer.on('reload-prefs', () => cb()),
