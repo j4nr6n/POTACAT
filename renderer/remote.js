@@ -46,6 +46,7 @@
   const pttBtn = document.getElementById('ptt-btn');
   const estopBtn = document.getElementById('estop-btn');
   const audioBtn = document.getElementById('audio-btn');
+  const bottomBar = document.getElementById('bottom-bar');
   const statusBar = document.getElementById('status-bar');
   const freqInput = document.getElementById('freq-input');
   const freqGo = document.getElementById('freq-go');
@@ -224,6 +225,43 @@
   let logbookQsos = [];
   let expandedQsoIdx = -1;
   let ltSelectedType = 'dx';
+
+  // --- FT8/JTCAT state ---
+  let ft8Running = false;
+  let ft8DecodeLog = [];       // [{cycle, time, mode, results}]
+  let ft8TxEnabled = false;
+  let ft8TxSlot = 'auto';      // 'auto' | 'even' | 'odd'
+  let ft8Transmitting = false;  // true when actively transmitting
+  let ft8TxMsg = '';
+  let ft8QsoState = null;       // {mode, call, grid, phase, txMsg, report, sentReport} or null
+  let ft8CycleSlot = '--';
+  let ft8CountdownTimer = null;
+  let ft8CycleBoundary = 0;     // epoch ms of next cycle boundary
+  let ft8Mode = 'FT8';
+  let ft8HuntCall = '';        // callsign we're hunting from spot list
+  let ft8UserScrolled = false; // true when user has scrolled up in decode log
+  let ft8CqFilter = false;     // CQ-only filter
+  let ft8TxFreqHz = 1500;      // TX frequency in Hz (for waterfall marker)
+
+  // FT8 DOM refs
+  const ft8View = document.getElementById('ft8-view');
+  const ft8BandBar = document.getElementById('ft8-band-bar');
+  const ft8ModeSelect = document.getElementById('ft8-mode-select');
+  const ft8RxTxBadge = document.getElementById('ft8-rx-tx-badge');
+  const ft8CycleIndicator = document.getElementById('ft8-cycle-indicator');
+  const ft8Countdown = document.getElementById('ft8-countdown');
+  const ft8SyncStatus = document.getElementById('ft8-sync-status');
+  const ft8EraseBtn = document.getElementById('ft8-erase-btn');
+  const ft8DecodeLogEl = document.getElementById('ft8-decode-log');
+  const ft8Waterfall = document.getElementById('ft8-waterfall');
+  const ft8TxBtn = document.getElementById('ft8-tx-btn');
+  const ft8SlotBtn = document.getElementById('ft8-slot-btn');
+  const ft8CqBtn = document.getElementById('ft8-cq-btn');
+  const ft8TxMsgEl = document.getElementById('ft8-tx-msg');
+  const ft8LogBtn = document.getElementById('ft8-log-btn');
+  const ft8QsoExchange = document.getElementById('ft8-qso-exchange');
+  const ft8TxFreqDisplay = document.getElementById('ft8-tx-freq-display');
+  const ft8CqFilterBtn = document.getElementById('ft8-cq-filter');
 
   // Rig controls elements (now inside settings overlay)
   const rigCtrlToggle = document.getElementById('rig-ctrl-toggle');
@@ -529,6 +567,70 @@
         } else {
           showLogToast(msg.error || 'Delete failed', true);
         }
+        break;
+
+      // --- JTCAT (FT8/FT4) ---
+      case 'jtcat-status':
+        ft8Running = msg.running !== false;
+        ft8Mode = msg.mode || ft8Mode;
+        ft8ModeSelect.value = ft8Mode;
+        ft8SyncStatus.textContent = 'Sync: ' + (msg.sync || '--');
+        break;
+
+      case 'jtcat-decode':
+        ft8HandleDecode(msg);
+        break;
+
+      case 'jtcat-decode-batch':
+        if (msg.entries) {
+          msg.entries.forEach(e => ft8HandleDecode(e));
+        }
+        break;
+
+      case 'jtcat-cycle':
+        ft8CycleSlot = msg.slot || '--';
+        ft8CycleIndicator.textContent = msg.slot === 'even' ? 'E' : msg.slot === 'odd' ? 'O' : '--';
+        ft8CycleBoundary = Date.now();
+        ft8StartCountdown();
+        break;
+
+      case 'jtcat-tx-status':
+        ft8Transmitting = msg.state === 'tx';
+        ft8TxMsg = msg.message || ft8TxMsg;
+        ft8RxTxBadge.textContent = ft8Transmitting ? 'TX' : 'RX';
+        ft8RxTxBadge.className = ft8Transmitting ? 'ft8-rx-badge ft8-txing' : 'ft8-rx-badge';
+        ft8TxBtn.classList.toggle('ft8-txing', ft8Transmitting);
+        txBanner.classList.toggle('hidden', !ft8Transmitting);
+        if (msg.txFreq != null) {
+          ft8TxFreqHz = msg.txFreq;
+          ft8TxFreqDisplay.textContent = 'TX: ' + msg.txFreq + ' Hz';
+        }
+        if (ft8Transmitting && ft8TxMsg) {
+          ft8AddTxRow(ft8TxMsg);
+        }
+        break;
+
+      case 'jtcat-qso-state':
+        if (msg.phase === 'error') {
+          ft8QsoState = null;
+          ft8RenderQsoExchange();
+          ft8UpdateCqBtn();
+          // Show error toast
+          const toast = document.createElement('div');
+          toast.className = 'ft8-error-toast';
+          toast.textContent = msg.error || 'Error';
+          ft8View.appendChild(toast);
+          setTimeout(() => toast.remove(), 4000);
+          break;
+        }
+        ft8QsoState = (msg.phase && msg.phase !== 'idle') ? msg : null;
+        ft8RenderQsoExchange();
+        ft8UpdateCqBtn();
+        ft8TxMsgEl.textContent = (ft8QsoState && ft8QsoState.txMsg) ? ft8QsoState.txMsg : '--';
+        break;
+
+      case 'jtcat-spectrum':
+        ft8RenderWaterfall(msg.bins);
         break;
     }
   }
@@ -836,6 +938,7 @@
     if (!card || !ws || ws.readyState !== WebSocket.OPEN) return;
     const freqKhz = card.dataset.freq;
     const mode = card.dataset.mode;
+    const callsign = card.dataset.call || '';
     ws.send(JSON.stringify({
       type: 'tune',
       freqKhz,
@@ -851,6 +954,18 @@
     tunedFreqKhz = freqKhz;
     spotList.querySelectorAll('.spot-card.tuned').forEach(c => c.classList.remove('tuned'));
     card.classList.add('tuned');
+
+    // FT8/FT4 spot → switch to FT8 tab and hunt the station
+    const modeUpper = (mode || '').toUpperCase();
+    if ((modeUpper === 'FT8' || modeUpper === 'FT4' || modeUpper === 'FT2') && callsign) {
+      ft8Mode = modeUpper;
+      ft8ModeSelect.value = ft8Mode;
+      ft8HuntCall = callsign.toUpperCase();
+      // Clear decode log for fresh start
+      ft8DecodeLog = [];
+      ft8DecodeLogEl.innerHTML = '<div class="ft8-empty">Hunting ' + esc(ft8HuntCall) + '...</div>';
+      switchTab('ft8');
+    }
   });
 
   // --- Multi-select dropdown helpers ---
@@ -1842,7 +1957,12 @@
     logTabView.classList.add('hidden');
     logView.classList.add('hidden');
     logbookView.classList.add('hidden');
+    ft8View.classList.add('hidden');
     if (scanning) stopScan();
+    // Show/hide PTT button — hide when FT8 tab is active
+    pttBtn.style.display = tab === 'ft8' ? 'none' : '';
+    // Hide entire bottom bar (Audio/PTT/STOP) on FT8 tab — no voice audio needed
+    bottomBar.style.display = tab === 'ft8' ? 'none' : '';
     if (tab === 'spots') {
       spotList.classList.remove('hidden');
       filterToolbar.classList.remove('hidden');
@@ -1873,6 +1993,19 @@
     } else if (tab === 'activate') {
       logView.classList.remove('hidden');
       updateLogViewState();
+    } else if (tab === 'ft8') {
+      ft8View.classList.remove('hidden');
+      // Auto-start engine if not running
+      if (!ft8Running) {
+        ft8Send({ type: 'jtcat-start', mode: ft8Mode });
+      }
+      // Tune radio to the active band with DIGU mode
+      var activeBandBtn = ft8BandBar.querySelector('.ft8-band-btn.active');
+      if (activeBandBtn) {
+        var freqKhz = parseInt(activeBandBtn.dataset.freq, 10);
+        ft8Send({ type: 'jtcat-set-band', band: activeBandBtn.dataset.band, freqKhz: freqKhz });
+      }
+      ft8StartCountdown();
     }
   }
 
@@ -2767,6 +2900,366 @@
       expandedQsoIdx = expandedQsoIdx === idx ? -1 : idx;
       renderLogbook();
     }
+  });
+
+  // ============================================================
+  // FT8/JTCAT — Phone-side client logic
+  // ============================================================
+
+  function ft8Send(obj) {
+    if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(obj));
+  }
+
+  // --- Decode handling ---
+  function ft8HandleDecode(data) {
+    ft8DecodeLog.push(data);
+    // Cap at 50 cycles
+    if (ft8DecodeLog.length > 50) ft8DecodeLog.shift();
+    ft8RenderDecodeRow(data);
+  }
+
+  function ft8RenderDecodeRow(data) {
+    const log = ft8DecodeLogEl;
+    // Remove "Tap a band to start" placeholder
+    const empty = log.querySelector('.ft8-empty');
+    if (empty) empty.remove();
+
+    const results = data.results || [];
+    const time = data.time || '';
+
+    // Cycle separator
+    const sep = document.createElement('div');
+    sep.className = 'ft8-cycle-sep';
+    sep.textContent = time + ' UTC';
+    log.appendChild(sep);
+
+    if (results.length === 0) {
+      if (!ft8Transmitting) {
+        const row = document.createElement('div');
+        row.className = 'ft8-row';
+        row.innerHTML = '<span class="ft8-time">' + esc(time) + '</span><span class="ft8-msg" style="color:#666">No decodes</span>';
+        log.appendChild(row);
+      }
+    } else {
+      results.forEach(d => {
+        const text = d.text || '';
+        const upper = text.toUpperCase();
+        const isCq = upper.startsWith('CQ ');
+        const isDirected = myCallsign && upper.indexOf(myCallsign.toUpperCase()) >= 0;
+        const isHunt = ft8HuntCall && upper.indexOf(ft8HuntCall) >= 0;
+        const is73 = upper.indexOf('RR73') >= 0 || upper.indexOf(' 73') >= 0;
+
+        // Auto-reply runs regardless of filter
+        if (isHunt && isCq && !ft8QsoState) {
+          const parts = upper.split(/\s+/);
+          let callIdx = 1;
+          if (parts.length > 3 && parts[1].length <= 3 && !/[0-9]/.test(parts[1])) callIdx = 2;
+          const call = parts[callIdx] || '';
+          const grid = parts[callIdx + 1] || '';
+          if (call === ft8HuntCall) {
+            ft8Send({ type: 'jtcat-reply', call, grid, df: d.df || 1500 });
+            ft8HuntCall = ''; // clear hunt — we've engaged
+          }
+        }
+
+        // Apply CQ filter — always show CQ, 73, directed-at-me, and hunted calls
+        if (ft8CqFilter && !isCq && !is73 && !isDirected && !isHunt) return;
+
+        const row = document.createElement('div');
+        row.className = 'ft8-row' + (isCq ? ' ft8-cq' : '') + (isDirected ? ' ft8-directed' : '') + (isHunt ? ' ft8-hunt' : '');
+        row.innerHTML =
+          '<span class="ft8-time">' + esc(time) + '</span>' +
+          '<span class="ft8-db">' + (d.db >= 0 ? '+' : '') + d.db + '</span>' +
+          '<span class="ft8-df">' + d.df + '</span>' +
+          '<span class="ft8-msg">' + esc(text) + '</span>';
+        // Click to reply
+        row.addEventListener('click', () => ft8ClickDecode(d));
+        log.appendChild(row);
+      });
+    }
+
+    // Auto-scroll unless user has scrolled up
+    if (!ft8UserScrolled) log.scrollTop = log.scrollHeight;
+  }
+
+  function ft8AddTxRow(message) {
+    const log = ft8DecodeLogEl;
+    const now = new Date();
+    const time = String(now.getUTCHours()).padStart(2, '0') + ':' +
+                 String(now.getUTCMinutes()).padStart(2, '0') + ':' +
+                 String(now.getUTCSeconds()).padStart(2, '0');
+    const row = document.createElement('div');
+    row.className = 'ft8-row ft8-tx';
+    row.innerHTML =
+      '<span class="ft8-time">' + esc(time) + '</span>' +
+      '<span class="ft8-db">TX</span>' +
+      '<span class="ft8-df">--</span>' +
+      '<span class="ft8-msg">' + esc(message) + '</span>';
+    log.appendChild(row);
+    log.scrollTop = log.scrollHeight;
+  }
+
+  function ft8ClickDecode(decode) {
+    // If it's a CQ, reply to it
+    const text = (decode.text || '').toUpperCase();
+    if (text.startsWith('CQ ')) {
+      // Parse: CQ [optional dx/na/etc] CALLSIGN GRID
+      const parts = text.split(/\s+/);
+      let callIdx = 1;
+      // Skip CQ modifiers (CQ DX, CQ NA, etc.)
+      if (parts.length > 3 && parts[1].length <= 3 && !/[0-9]/.test(parts[1])) callIdx = 2;
+      const call = parts[callIdx] || '';
+      const grid = parts[callIdx + 1] || '';
+      if (call) {
+        ft8Send({ type: 'jtcat-reply', call, grid, df: decode.df || 1500 });
+      }
+    } else if (myCallsign && text.indexOf(myCallsign.toUpperCase()) >= 0) {
+      // Directed at us — parse caller and reply (handles CQ→QSO transition on click)
+      const parts = text.split(/\s+/);
+      const mc = myCallsign.toUpperCase();
+      // Format: MYCALL THEIRCALL PAYLOAD — caller is the part that isn't our callsign
+      const caller = parts.find(p => p !== mc && /^[A-Z0-9]{3,}/.test(p));
+      const gridOrReport = parts[2] || '';
+      const grid = /^[A-R]{2}[0-9]{2}$/i.test(gridOrReport) ? gridOrReport : '';
+      if (caller) {
+        ft8Send({ type: 'jtcat-reply', call: caller, grid, df: decode.df || 1500 });
+      }
+    } else {
+      // Click on a non-CQ, non-directed decode — set TX freq to their freq
+      if (decode.df) {
+        ft8Send({ type: 'jtcat-set-tx-freq', hz: decode.df });
+      }
+    }
+  }
+
+  // --- QSO Exchange display ---
+  function ft8RenderQsoExchange() {
+    if (!ft8QsoState || ft8QsoState.phase === 'idle') {
+      ft8QsoExchange.classList.add('hidden');
+      ft8QsoExchange.innerHTML = '';
+      return;
+    }
+    ft8QsoExchange.classList.remove('hidden');
+    const q = ft8QsoState;
+    let html = '<div class="ft8-qso-header">' +
+      '<span style="font-weight:600;color:#fff">' + esc(q.call || '???') + '</span>' +
+      (q.grid ? ' <span style="color:#4fc3f7">' + esc(q.grid) + '</span>' : '') +
+      '<button type="button" class="ft8-qso-cancel-btn" id="ft8-qso-cancel">&times;</button>' +
+      '</div>';
+
+    // Build exchange rows based on mode and phase
+    const rows = ft8BuildExchangeRows(q);
+    rows.forEach(r => {
+      const cls = 'ft8-qso-row' + (r.tx ? ' ft8-qso-tx' : ' ft8-qso-rx') + (r.directed ? ' ft8-qso-directed' : '') + (r.done ? ' ft8-qso-done-row' : '');
+      html += '<div class="' + cls + '">' +
+        '<span class="ft8-msg">' + (r.tx ? 'TX: ' : 'RX: ') + esc(r.text) + '</span>' +
+        (r.active ? ' <span style="color:#ffd740">&#x25C0;</span>' : '') +
+        '</div>';
+    });
+
+    if (q.phase === 'done') {
+      html += '<div class="ft8-qso-done">QSO Complete!</div>';
+    }
+
+    ft8QsoExchange.innerHTML = html;
+
+    // Bind cancel button
+    const cancelBtn = document.getElementById('ft8-qso-cancel');
+    if (cancelBtn) cancelBtn.addEventListener('click', () => ft8Send({ type: 'jtcat-cancel-qso' }));
+  }
+
+  function ft8BuildExchangeRows(q) {
+    const rows = [];
+    const myCall = q.myCall || myCallsign || '';
+    if (q.mode === 'cq') {
+      // CQ flow: CQ(tx) → reply(rx) → report(tx) → R+rpt(rx) → RR73(tx)
+      rows.push({ tx: true, text: 'CQ ' + myCall + ' ' + (q.myGrid || ''), done: true, active: q.phase === 'cq' });
+      if (q.call) {
+        rows.push({ tx: false, text: q.call + ' ' + myCall + ' ' + (q.grid || ''), directed: true, done: q.phase !== 'cq', active: false });
+        rows.push({ tx: true, text: q.call + ' ' + myCall + ' ' + (q.sentReport || '...'), done: ['cq-rr73', 'done'].includes(q.phase), active: q.phase === 'cq-report' });
+      }
+      if (q.report) {
+        rows.push({ tx: false, text: q.call + ' ' + myCall + ' R' + q.report, directed: true, done: ['cq-rr73', 'done'].includes(q.phase), active: false });
+        rows.push({ tx: true, text: q.call + ' ' + myCall + ' RR73', done: q.phase === 'done', active: q.phase === 'cq-rr73' });
+      }
+    } else {
+      // Reply flow: reply(tx) → rpt(rx) → R+rpt(tx) → RR73(rx) → 73(tx)
+      const theirCall = q.call || '';
+      rows.push({ tx: true, text: theirCall + ' ' + myCall + ' ' + (q.myGrid || ''), done: true, active: q.phase === 'reply' });
+      if (q.report) {
+        rows.push({ tx: false, text: myCall + ' ' + theirCall + ' ' + q.report, directed: true, done: true, active: false });
+        rows.push({ tx: true, text: theirCall + ' ' + myCall + ' R' + (q.sentReport || '...'), done: ['73', 'done'].includes(q.phase), active: q.phase === 'r+report' });
+      }
+      if (q.phase === '73' || q.phase === 'done') {
+        rows.push({ tx: false, text: myCall + ' ' + theirCall + ' RR73', directed: true, done: true, active: false });
+        rows.push({ tx: true, text: theirCall + ' ' + myCall + ' 73', done: q.phase === 'done', active: q.phase === '73' });
+      }
+    }
+    return rows;
+  }
+
+  function ft8UpdateCqBtn() {
+    const inQso = ft8QsoState && ft8QsoState.phase !== 'idle' && ft8QsoState.phase !== 'done';
+    ft8CqBtn.classList.toggle('active', inQso && ft8QsoState.mode === 'cq');
+    ft8CqBtn.textContent = inQso ? (ft8QsoState.call || 'QSO') : 'CQ';
+  }
+
+  // --- Countdown timer ---
+  function ft8StartCountdown() {
+    if (ft8CountdownTimer) clearInterval(ft8CountdownTimer);
+    const cycleSec = ft8Mode === 'FT2' ? 3.8 : ft8Mode === 'FT4' ? 7.5 : 15;
+    ft8CountdownTimer = setInterval(() => {
+      const now = Date.now() / 1000;
+      const inCycle = now % cycleSec;
+      const remaining = cycleSec - inCycle;
+      ft8Countdown.textContent = remaining.toFixed(0) + 's';
+    }, 250);
+  }
+
+  function ft8StopCountdown() {
+    if (ft8CountdownTimer) { clearInterval(ft8CountdownTimer); ft8CountdownTimer = null; }
+    ft8Countdown.textContent = '--';
+  }
+
+  // --- Waterfall rendering ---
+  let ft8WfVisible = true;
+  function ft8RenderWaterfall(bins) {
+    if (!bins || !bins.length) return;
+    if (!ft8WfVisible) return;
+    const canvas = ft8Waterfall;
+    const ctx = canvas.getContext('2d');
+    const w = canvas.width;
+    const h = canvas.height;
+    // Shift existing image down by 1 pixel
+    const imgData = ctx.getImageData(0, 0, w, h - 1);
+    ctx.putImageData(imgData, 0, 1);
+    // Draw new row at top
+    const step = bins.length / w;
+    for (let x = 0; x < w; x++) {
+      const idx = Math.floor(x * step);
+      const val = bins[idx] || 0;
+      // Map 0-255 to color (blue→cyan→yellow→red)
+      const r = val > 170 ? 255 : val > 85 ? (val - 85) * 3 : 0;
+      const g = val > 170 ? 255 - (val - 170) * 3 : val > 85 ? 255 : val * 3;
+      const b = val > 85 ? 0 : 255 - val * 3;
+      ctx.fillStyle = 'rgb(' + r + ',' + g + ',' + b + ')';
+      ctx.fillRect(x, 0, 1, 1);
+    }
+    // Draw TX frequency marker (red bar with black border)
+    const txX = Math.round(ft8TxFreqHz / 3000 * w);
+    ctx.fillStyle = '#000';
+    ctx.fillRect(txX - 2, 0, 5, h);
+    ctx.fillStyle = '#ff2222';
+    ctx.fillRect(txX - 1, 0, 3, h);
+  }
+
+  // --- Control bar event handlers ---
+
+  // TX toggle
+  ft8TxBtn.addEventListener('click', () => {
+    ft8TxEnabled = !ft8TxEnabled;
+    ft8TxBtn.classList.toggle('active', ft8TxEnabled);
+    if (!ft8TxEnabled) {
+      // Halt TX — also cancel any active QSO
+      ft8Send({ type: 'jtcat-cancel-qso' });
+    } else {
+      ft8Send({ type: 'jtcat-enable-tx', enabled: true });
+    }
+  });
+
+  // Slot cycle: auto → even → odd → auto
+  ft8SlotBtn.addEventListener('click', () => {
+    if (ft8TxSlot === 'auto') ft8TxSlot = 'even';
+    else if (ft8TxSlot === 'even') ft8TxSlot = 'odd';
+    else ft8TxSlot = 'auto';
+    ft8SlotBtn.textContent = ft8TxSlot === 'auto' ? 'Auto' : ft8TxSlot === 'even' ? 'Even' : 'Odd';
+    ft8Send({ type: 'jtcat-set-tx-slot', slot: ft8TxSlot });
+  });
+
+  // CQ button
+  ft8CqBtn.addEventListener('click', () => {
+    const inQso = ft8QsoState && ft8QsoState.phase !== 'idle' && ft8QsoState.phase !== 'done';
+    if (inQso) {
+      // Cancel current QSO
+      ft8Send({ type: 'jtcat-cancel-qso' });
+    } else {
+      // Call CQ
+      ft8TxEnabled = true;
+      ft8TxBtn.classList.add('active');
+      ft8Send({ type: 'jtcat-call-cq' });
+    }
+  });
+
+  // LOG button
+  ft8LogBtn.addEventListener('click', () => {
+    if (ft8QsoState && ft8QsoState.call) {
+      ft8Send({ type: 'jtcat-log-qso' });
+      showLogToast('QSO logged: ' + ft8QsoState.call);
+    }
+  });
+
+  // Track manual scroll in decode log
+  ft8DecodeLogEl.addEventListener('scroll', () => {
+    const el = ft8DecodeLogEl;
+    ft8UserScrolled = el.scrollHeight - el.scrollTop - el.clientHeight > 80;
+  });
+
+  // CQ-only filter toggle
+  ft8CqFilterBtn.addEventListener('click', () => {
+    ft8CqFilter = !ft8CqFilter;
+    ft8CqFilterBtn.classList.toggle('active', ft8CqFilter);
+  });
+
+  // Waterfall toggle
+  const ft8WfToggle = document.getElementById('ft8-wf-toggle');
+  ft8WfToggle.classList.add('active');
+  ft8WfToggle.addEventListener('click', () => {
+    ft8WfVisible = !ft8WfVisible;
+    ft8Waterfall.classList.toggle('hidden', !ft8WfVisible);
+    ft8WfToggle.classList.toggle('active', ft8WfVisible);
+  });
+
+  // Erase button
+  ft8EraseBtn.addEventListener('click', () => {
+    ft8DecodeLog = [];
+    ft8DecodeLogEl.innerHTML = '<div class="ft8-empty">Cleared</div>';
+    ft8UserScrolled = false;
+  });
+
+  // --- Mode select ---
+  ft8ModeSelect.addEventListener('change', () => {
+    ft8Mode = ft8ModeSelect.value;
+    ft8Send({ type: 'jtcat-set-mode', mode: ft8Mode });
+    ft8StartCountdown(); // restart with new cycle duration
+  });
+
+  // --- Band bar ---
+  ft8BandBar.addEventListener('click', (e) => {
+    const btn = e.target.closest('.ft8-band-btn');
+    if (!btn) return;
+    const band = btn.dataset.band;
+    const freqKhz = parseInt(btn.dataset.freq, 10);
+    ft8BandBar.querySelectorAll('.ft8-band-btn').forEach(b => b.classList.toggle('active', b === btn));
+    ft8Send({ type: 'jtcat-set-band', band, freqKhz });
+    // Clear decode log on band change
+    ft8DecodeLog = [];
+    ft8DecodeLogEl.innerHTML = '<div class="ft8-empty">Switching to ' + band + '...</div>';
+    ft8UserScrolled = false;
+    // Auto-start if not running
+    if (!ft8Running) {
+      ft8Send({ type: 'jtcat-start', mode: ft8Mode });
+    }
+  });
+
+  // --- Waterfall tap to set TX freq ---
+  ft8Waterfall.addEventListener('click', (e) => {
+    const rect = ft8Waterfall.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const fraction = x / rect.width;
+    const hz = Math.max(100, Math.min(3000, Math.round(fraction * 3000 / 10) * 10));
+    ft8TxFreqHz = hz;
+    ft8TxFreqDisplay.textContent = 'TX: ' + hz + ' Hz';
+    ft8Send({ type: 'jtcat-set-tx-freq', hz });
   });
 
   // Auto-connect on page load

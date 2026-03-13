@@ -67,6 +67,9 @@ let qsoPopoutWin = null; // pop-out QSO log window
 let actmapPopoutWin = null; // pop-out activation map window
 let spotsPopoutWin = null; // pop-out spots window (activator mode)
 let clusterPopoutWin = null; // pop-out DX cluster terminal window
+let jtcatPopoutWin = null;   // pop-out JTCAT window
+let jtcatMapPopoutWin = null; // pop-out JTCAT map window
+let popoutJtcatQso = null;   // QSO state for popout (like remoteJtcatQso for ECHOCAT)
 let cat = null;
 let spotTimer = null;
 let solarTimer = null;
@@ -1412,6 +1415,194 @@ function updateWsjtxHighlights() {
 
 // --- JTCAT (FT8/FT4 native decode engine) ---
 let ft8Engine = null;
+let remoteJtcatQso = null;
+let jtcatQuietFreq = 1500; // auto-detected quiet TX frequency from FFT analysis
+const JTCAT_MAX_CQ_RETRIES = 15;
+const JTCAT_MAX_QSO_RETRIES = 6;
+
+function remoteJtcatMyCall() { return (settings.myCallsign || '').toUpperCase(); }
+function remoteJtcatMyGrid() { return (settings.grid || '').toUpperCase().substring(0, 4); }
+
+function remoteJtcatBroadcastQso() {
+  if (remoteServer) remoteServer.broadcastJtcatQsoState(remoteJtcatQso || { phase: 'idle' });
+}
+
+async function remoteJtcatSetTxMsg(msg) {
+  if (ft8Engine) await ft8Engine.setTxMessage(msg);
+  remoteJtcatBroadcastQso();
+}
+
+function popoutBroadcastQso() {
+  if (jtcatPopoutWin && !jtcatPopoutWin.isDestroyed()) {
+    jtcatPopoutWin.webContents.send('jtcat-qso-state', popoutJtcatQso || { phase: 'idle' });
+  }
+}
+
+function jtcatAutoLog(qso) {
+  const q = qso || remoteJtcatQso;
+  if (!q || !q.call) return;
+  const now = new Date();
+  const qsoDate = now.toISOString().slice(0, 10).replace(/-/g, '');
+  const qsoTime = now.toISOString().slice(11, 16).replace(/:/g, '');
+  const freqKhz = _currentFreqHz ? _currentFreqHz / 1000 : 0;
+  const freqMhz = freqKhz / 1000;
+  const band = freqToBand(freqMhz) || '';
+  const mode = ft8Engine ? ft8Engine._mode : 'FT8';
+  const qsoData = {
+    callsign: q.call.toUpperCase(),
+    frequency: String(freqKhz),
+    mode,
+    band,
+    qsoDate,
+    timeOn: qsoTime,
+    rstSent: q.sentReport || '-00',
+    rstRcvd: q.report || '-00',
+    gridsquare: q.grid || '',
+    comment: 'JTCAT ' + mode,
+  };
+  saveQsoRecord(qsoData).then(result => {
+    console.log('[JTCAT] Auto-logged QSO:', q.call, result && result.success !== false ? 'OK' : (result && result.error || 'unknown'));
+    // Notify the popout window
+    if (jtcatPopoutWin && !jtcatPopoutWin.isDestroyed()) {
+      jtcatPopoutWin.webContents.send('jtcat-qso-logged', {
+        callsign: q.call.toUpperCase(),
+        grid: q.grid || '',
+        band,
+        mode,
+        rstSent: q.sentReport || '',
+        rstRcvd: q.report || '',
+      });
+    }
+  }).catch(err => {
+    console.error('[JTCAT] Auto-log failed:', err.message);
+  });
+}
+
+// Shared QSO state machine — advance on decodes
+// setTxMsg: fn(msg) to set TX message and broadcast state
+// onDone: fn() called when QSO completes
+function advanceJtcatQso(q, results, setTxMsg, onDone) {
+  if (!q || q.phase === 'done' || q.phase === 'idle') return;
+  const myCall = q.myCall;
+
+  if (q.mode === 'cq') {
+    // Final courtesy TX: advance unconditionally — QSO already logged when entering this phase
+    if (q.phase === 'cq-rr73') {
+      q.phase = 'done';
+      ft8Engine._txEnabled = false;
+      ft8Engine.setTxMessage('');
+      ft8Engine.setTxSlot('auto');
+      return;
+    }
+
+    if (q.phase === 'cq') {
+      const reply = results.find(d => {
+        const t = (d.text || '').toUpperCase();
+        return t.indexOf(myCall) >= 0 && !t.startsWith('CQ ');
+      });
+      if (!reply) return;
+      const m = (reply.text || '').toUpperCase().match(new RegExp(myCall.replace(/[/]/g, '\\/') + '\\s+([A-Z0-9/]+)\\s+([A-R]{2}\\d{2})', 'i'));
+      if (!m) return;
+      q.call = m[1]; q.grid = m[2];
+      const rpt = reply.db >= 0 ? '+' + String(reply.db).padStart(2, '0') : String(reply.db).padStart(3, '0');
+      q.sentReport = rpt;
+      q.txMsg = q.call + ' ' + myCall + ' ' + rpt;
+      q.phase = 'cq-report';
+      ft8Engine.setRxFreq(reply.df);
+      setTxMsg(q.txMsg);
+    } else if (q.phase === 'cq-report') {
+      const resp = results.find(d => { const t = (d.text || '').toUpperCase(); return t.indexOf(myCall) >= 0 && t.indexOf(q.call) >= 0; });
+      if (!resp) return;
+      const rptM = (resp.text || '').toUpperCase().match(/R([+-]\d{2})/);
+      if (!rptM) return;
+      q.report = rptM[1];
+      q.txMsg = q.call + ' ' + myCall + ' RR73';
+      q.phase = 'cq-rr73';
+      setTxMsg(q.txMsg);
+      // QSO confirmed — both reports exchanged. Log now, send RR73 as courtesy.
+      onDone();
+    }
+  } else {
+    // Reply mode
+    const theirCall = q.call;
+
+    // Final courtesy TX: advance unconditionally — QSO already logged when entering this phase
+    if (q.phase === '73') {
+      q.phase = 'done';
+      ft8Engine._txEnabled = false;
+      ft8Engine.setTxMessage('');
+      ft8Engine.setTxSlot('auto');
+      return;
+    }
+
+    // Detect if the station we're calling started a QSO with someone else.
+    // e.g. we're calling K3SBP but we decode "W1ABC K3SBP FN20" or "W1ABC K3SBP R-12" — K3SBP picked someone else.
+    const theyPickedOther = results.find(d => {
+      const t = (d.text || '').toUpperCase();
+      if (t.startsWith('CQ ')) return false; // ignore their CQ
+      if (t.indexOf(myCall) >= 0) return false; // directed at us — not "someone else"
+      // Check if theirCall appears as the sender (second token) replying to a different station
+      // e.g. "N2XYZ W1ABC -12" means W1ABC (theirCall) is sending to N2XYZ, not us
+      const parts = t.split(/\s+/);
+      return parts.length >= 2 && parts[1] === theirCall;
+    });
+    if (theyPickedOther) {
+      console.log('[JTCAT] Station', theirCall, 'started QSO with someone else:', theyPickedOther.text, '— aborting');
+      q.phase = 'done';
+      q.error = theirCall + ' picked another station';
+      ft8Engine._txEnabled = false;
+      ft8Engine.setTxMessage('');
+      ft8Engine.setTxSlot('auto');
+      if (ft8Engine._txActive) ft8Engine.txComplete();
+      return;
+    }
+
+    const resp = results.find(d => { const t = (d.text || '').toUpperCase(); return t.indexOf(myCall) >= 0 && t.indexOf(theirCall) >= 0; });
+    if (!resp) return;
+    const text = (resp.text || '').toUpperCase();
+    if (q.phase === 'reply') {
+      const rptM = text.match(/[R]?([+-]\d{2})/);
+      if (!rptM) return;
+      q.report = rptM[1];
+      const ourRpt = resp.db >= 0 ? '+' + String(resp.db).padStart(2, '0') : String(resp.db).padStart(3, '0');
+      q.sentReport = ourRpt;
+      if (text.indexOf('R' + rptM[1]) >= 0 || text.indexOf('R+') >= 0 || text.indexOf('R-') >= 0) {
+        // They sent R+report — both reports exchanged. Send RR73, log now.
+        q.txMsg = theirCall + ' ' + myCall + ' RR73'; q.phase = '73';
+        setTxMsg(q.txMsg);
+        onDone();
+      } else {
+        q.txMsg = theirCall + ' ' + myCall + ' R' + ourRpt; q.phase = 'r+report';
+        setTxMsg(q.txMsg);
+      }
+    } else if (q.phase === 'r+report') {
+      if (text.indexOf('RR73') >= 0 || text.indexOf('RRR') >= 0 || text.indexOf(' 73') >= 0) {
+        // They confirmed — QSO complete. Send 73 as courtesy, log now.
+        q.txMsg = theirCall + ' ' + myCall + ' 73'; q.phase = '73';
+        setTxMsg(q.txMsg);
+        onDone();
+      }
+    }
+  }
+}
+
+// Server-side QSO state machine wrappers
+function processRemoteJtcatQso(results) {
+  advanceJtcatQso(remoteJtcatQso, results, remoteJtcatSetTxMsg, () => {
+    jtcatAutoLog(remoteJtcatQso);
+    remoteJtcatBroadcastQso();
+  });
+}
+
+function processPopoutJtcatQso(results) {
+  advanceJtcatQso(popoutJtcatQso, results, (msg) => {
+    if (ft8Engine) ft8Engine.setTxMessage(msg);
+    popoutBroadcastQso();
+  }, () => {
+    jtcatAutoLog(popoutJtcatQso);
+    popoutBroadcastQso();
+  });
+}
 
 function startJtcat(mode) {
   stopJtcat();
@@ -1422,17 +1613,122 @@ function startJtcat(mode) {
     if (win && !win.isDestroyed()) {
       win.webContents.send('jtcat-decode', data);
     }
+    if (jtcatPopoutWin && !jtcatPopoutWin.isDestroyed()) {
+      jtcatPopoutWin.webContents.send('jtcat-decode', data);
+    }
+    if (jtcatMapPopoutWin && !jtcatMapPopoutWin.isDestroyed()) {
+      jtcatMapPopoutWin.webContents.send('jtcat-decode', data);
+    }
+    // Broadcast to phone + advance remote QSO state machine
+    if (remoteServer && remoteServer.hasClient()) {
+      const now = new Date();
+      const timeStr = String(now.getUTCHours()).padStart(2, '0') + ':' +
+                      String(now.getUTCMinutes()).padStart(2, '0') + ':' +
+                      String(now.getUTCSeconds()).padStart(2, '0');
+      remoteServer.broadcastJtcatDecode({ ...data, time: timeStr });
+    }
+    if (remoteJtcatQso && remoteJtcatQso.phase !== 'done') {
+      const phaseBefore = remoteJtcatQso.phase;
+      processRemoteJtcatQso(data.results || []);
+      // Count retries — if phase didn't advance, increment; if it did, reset
+      if (remoteJtcatQso && remoteJtcatQso.phase === phaseBefore && remoteJtcatQso.phase !== 'done') {
+        remoteJtcatQso.txRetries = (remoteJtcatQso.txRetries || 0) + 1;
+        const max = (remoteJtcatQso.phase === 'cq') ? JTCAT_MAX_CQ_RETRIES : JTCAT_MAX_QSO_RETRIES;
+        if (remoteJtcatQso.txRetries >= max) {
+          console.log('[JTCAT Remote] TX retry limit reached (' + max + ') in phase ' + remoteJtcatQso.phase + ' — giving up');
+          ft8Engine._txEnabled = false;
+          ft8Engine.setTxMessage('');
+          ft8Engine.setTxSlot('auto');
+          if (ft8Engine._txActive) ft8Engine.txComplete();
+          remoteJtcatQso = null;
+          remoteJtcatBroadcastQso();
+          if (remoteServer.hasClient()) {
+            remoteServer.broadcastJtcatQsoState({ phase: 'error', error: 'No response — TX stopped' });
+          }
+        }
+      } else if (remoteJtcatQso && remoteJtcatQso.phase !== phaseBefore) {
+        remoteJtcatQso.txRetries = 0;
+      }
+    }
+    // Advance popout QSO state machine
+    if (popoutJtcatQso && popoutJtcatQso.phase !== 'done') {
+      const phaseBefore = popoutJtcatQso.phase;
+      processPopoutJtcatQso(data.results || []);
+      if (popoutJtcatQso && popoutJtcatQso.phase === phaseBefore && popoutJtcatQso.phase !== 'done') {
+        popoutJtcatQso.txRetries = (popoutJtcatQso.txRetries || 0) + 1;
+        const max = (popoutJtcatQso.phase === 'cq') ? JTCAT_MAX_CQ_RETRIES : JTCAT_MAX_QSO_RETRIES;
+        if (popoutJtcatQso.txRetries >= max) {
+          console.log('[JTCAT Popout] TX retry limit reached (' + max + ') in phase ' + popoutJtcatQso.phase + ' — giving up');
+          ft8Engine._txEnabled = false;
+          ft8Engine.setTxMessage('');
+          ft8Engine.setTxSlot('auto');
+          if (ft8Engine._txActive) ft8Engine.txComplete();
+          popoutJtcatQso = null;
+          popoutBroadcastQso();
+          if (jtcatPopoutWin && !jtcatPopoutWin.isDestroyed()) {
+            jtcatPopoutWin.webContents.send('jtcat-qso-state', { phase: 'error', error: 'No response — TX stopped' });
+          }
+        }
+      } else if (popoutJtcatQso && popoutJtcatQso.phase !== phaseBefore) {
+        popoutJtcatQso.txRetries = 0;
+      }
+    }
   });
 
   ft8Engine.on('cycle', (data) => {
     if (win && !win.isDestroyed()) {
       win.webContents.send('jtcat-cycle', data);
     }
+    if (jtcatPopoutWin && !jtcatPopoutWin.isDestroyed()) {
+      jtcatPopoutWin.webContents.send('jtcat-cycle', data);
+    }
+    if (remoteServer && remoteServer.hasClient()) remoteServer.broadcastJtcatCycle(data);
   });
 
   ft8Engine.on('status', (data) => {
     if (win && !win.isDestroyed()) {
       win.webContents.send('jtcat-status', data);
+    }
+    if (jtcatPopoutWin && !jtcatPopoutWin.isDestroyed()) {
+      jtcatPopoutWin.webContents.send('jtcat-status', data);
+    }
+    if (remoteServer && remoteServer.hasClient()) remoteServer.broadcastJtcatStatus(data);
+  });
+
+  ft8Engine.on('tx-start', (data) => {
+    console.log('[JTCAT] TX start — PTT on, message:', data.message);
+    handleRemotePtt(true);
+    if (win && !win.isDestroyed()) {
+      win.webContents.send('jtcat-tx-status', { state: 'tx', message: data.message, slot: data.slot });
+    }
+    if (jtcatPopoutWin && !jtcatPopoutWin.isDestroyed()) {
+      jtcatPopoutWin.webContents.send('jtcat-tx-status', { state: 'tx', message: data.message, slot: data.slot, txFreq: ft8Engine._txFreq });
+    }
+    if (jtcatMapPopoutWin && !jtcatMapPopoutWin.isDestroyed()) {
+      jtcatMapPopoutWin.webContents.send('jtcat-tx-status', { state: 'tx', message: data.message, slot: data.slot, txFreq: ft8Engine._txFreq });
+      if (popoutJtcatQso) jtcatMapPopoutWin.webContents.send('jtcat-qso-state', popoutJtcatQso);
+    }
+    if (remoteServer && remoteServer.hasClient()) {
+      remoteServer.broadcastJtcatTxStatus({ state: 'tx', message: data.message, slot: data.slot, txFreq: ft8Engine._txFreq });
+    }
+    setTimeout(() => {
+      if (win && !win.isDestroyed() && ft8Engine && ft8Engine._txActive) {
+        win.webContents.send('jtcat-tx-audio', { samples: Array.from(data.samples), offsetMs: data.offsetMs || 0 });
+      }
+    }, 200);
+  });
+
+  ft8Engine.on('tx-end', () => {
+    console.log('[JTCAT] TX end — PTT off');
+    handleRemotePtt(false);
+    if (win && !win.isDestroyed()) {
+      win.webContents.send('jtcat-tx-status', { state: 'rx' });
+    }
+    if (jtcatPopoutWin && !jtcatPopoutWin.isDestroyed()) {
+      jtcatPopoutWin.webContents.send('jtcat-tx-status', { state: 'rx', txFreq: ft8Engine ? ft8Engine._txFreq : 0 });
+    }
+    if (remoteServer && remoteServer.hasClient()) {
+      remoteServer.broadcastJtcatTxStatus({ state: 'rx', txFreq: ft8Engine ? ft8Engine._txFreq : 0 });
     }
   });
 
@@ -1642,6 +1938,14 @@ function connectRemote() {
       win.webContents.send('remote-status', { connected: false });
     }
     destroyRemoteAudioWindow();
+    // Safety: disable JTCAT TX if phone was driving a QSO
+    if (ft8Engine && remoteJtcatQso) {
+      ft8Engine._txEnabled = false;
+      ft8Engine.setTxMessage('');
+      if (ft8Engine._txActive) ft8Engine.txComplete();
+      console.log('[JTCAT] Phone disconnected — TX disabled, QSO cleared');
+    }
+    remoteJtcatQso = null;
   });
 
   remoteServer.on('set-sources', (sources) => {
@@ -2151,6 +2455,154 @@ function connectRemote() {
     } catch (err) {
       console.error('[Echo CAT] Log QSO error:', err.message);
       remoteServer.sendLogResult({ success: false, error: err.message });
+    }
+  });
+
+  // --- JTCAT remote control (event handlers — helpers are at file level) ---
+
+  remoteServer.on('jtcat-start', ({ mode }) => {
+    startJtcat(mode);
+    // Start audio capture in desktop renderer
+    if (win && !win.isDestroyed()) win.webContents.send('jtcat-start-for-remote');
+  });
+
+  remoteServer.on('jtcat-stop', () => {
+    stopJtcat();
+    remoteJtcatQso = null;
+    if (win && !win.isDestroyed()) win.webContents.send('jtcat-stop-for-remote');
+  });
+
+  remoteServer.on('jtcat-call-cq', async () => {
+    if (!ft8Engine) return;
+    const myCall = remoteJtcatMyCall();
+    const myGrid = remoteJtcatMyGrid();
+    if (!myCall || !myGrid) {
+      // Send error back to phone
+      if (remoteServer.hasClient()) {
+        remoteServer.broadcastJtcatQsoState({ phase: 'error', error: 'Set callsign & grid in POTACAT Settings first' });
+      }
+      console.warn('[JTCAT Remote] CQ aborted — callsign or grid not configured');
+      return;
+    }
+    // Auto-place TX on quiet frequency from FFT analysis
+    ft8Engine.setTxFreq(jtcatQuietFreq);
+    if (remoteServer.hasClient()) {
+      remoteServer.broadcastJtcatTxStatus({ state: 'rx', txFreq: jtcatQuietFreq });
+    }
+    const txMsg = 'CQ ' + myCall + ' ' + myGrid;
+    // TX on next available slot
+    const nextSlot = ft8Engine._lastRxSlot === 'even' ? 'odd' : (ft8Engine._lastRxSlot === 'odd' ? 'even' : 'even');
+    ft8Engine.setTxSlot(nextSlot);
+    remoteJtcatQso = { mode: 'cq', call: null, grid: null, phase: 'cq', txMsg, report: null, sentReport: null, myCall, myGrid, txRetries: 0 };
+    ft8Engine._txEnabled = true;
+    await remoteJtcatSetTxMsg(txMsg);
+    ft8Engine.tryImmediateTx();
+    console.log('[JTCAT Remote] CQ:', txMsg, '@ quiet freq', jtcatQuietFreq, 'Hz slot:', nextSlot);
+  });
+
+  remoteServer.on('jtcat-reply', async ({ call, grid, df, slot }) => {
+    if (!ft8Engine) return;
+    const myCall = remoteJtcatMyCall();
+    const myGrid = remoteJtcatMyGrid();
+    if (!myCall) return;
+    // Halt any active TX (e.g. CQ) so reply goes out on next boundary
+    if (ft8Engine._txActive) ft8Engine.txComplete();
+    const txMsg = call + ' ' + myCall + ' ' + myGrid;
+    ft8Engine.setTxFreq(df);
+    ft8Engine.setRxFreq(df);
+    // TX on opposite slot from the station we're replying to (use slot from decode data)
+    const targetSlot = slot || ft8Engine._lastRxSlot;
+    ft8Engine.setTxSlot(targetSlot === 'even' ? 'odd' : (targetSlot === 'odd' ? 'even' : 'auto'));
+    remoteJtcatQso = { mode: 'reply', call, grid, phase: 'reply', txMsg, report: null, sentReport: null, myCall, myGrid, txRetries: 0 };
+    ft8Engine._txEnabled = true;
+    await remoteJtcatSetTxMsg(txMsg);
+    ft8Engine.tryImmediateTx();
+    console.log('[JTCAT Remote] Reply to', call, ':', txMsg, 'slot:', ft8Engine._txSlot);
+  });
+
+  remoteServer.on('jtcat-enable-tx', ({ enabled }) => {
+    if (ft8Engine) ft8Engine._txEnabled = enabled;
+  });
+
+  remoteServer.on('jtcat-halt-tx', () => {
+    if (ft8Engine) {
+      ft8Engine._txEnabled = false;
+      ft8Engine.setTxMessage('');
+      if (ft8Engine._txActive) ft8Engine.txComplete();
+    }
+    remoteJtcatQso = null;
+    remoteJtcatBroadcastQso();
+  });
+
+  remoteServer.on('jtcat-set-mode', ({ mode }) => {
+    if (ft8Engine) ft8Engine.setMode(mode);
+  });
+
+  remoteServer.on('jtcat-set-tx-freq', ({ hz }) => {
+    if (ft8Engine) {
+      ft8Engine.setTxFreq(hz);
+      if (remoteServer.hasClient()) {
+        remoteServer.broadcastJtcatTxStatus({ state: ft8Engine._txActive ? 'tx' : 'rx', txFreq: ft8Engine._txFreq });
+      }
+    }
+  });
+
+  remoteServer.on('jtcat-set-tx-slot', ({ slot }) => {
+    if (ft8Engine) ft8Engine.setTxSlot(slot);
+  });
+
+  remoteServer.on('jtcat-cancel-qso', () => {
+    if (ft8Engine) {
+      ft8Engine._txEnabled = false;
+      ft8Engine.setTxMessage('');
+      ft8Engine.setTxSlot('auto');
+      if (ft8Engine._txActive) ft8Engine.txComplete();
+    }
+    remoteJtcatQso = null;
+    remoteJtcatBroadcastQso();
+  });
+
+  remoteServer.on('jtcat-set-band', ({ band, freqKhz }) => {
+    if (freqKhz) tuneRadio(freqKhz, 'DIGU');
+  });
+
+  remoteServer.on('jtcat-log-qso', async () => {
+    if (!remoteJtcatQso || !remoteJtcatQso.call) {
+      console.log('[JTCAT Remote] Log QSO requested but no active QSO');
+      return;
+    }
+    try {
+      const q = remoteJtcatQso;
+      const now = new Date();
+      const qsoDate = now.toISOString().slice(0, 10).replace(/-/g, '');
+      const qsoTime = now.toISOString().slice(11, 16).replace(/:/g, '');
+      const freqKhz = _currentFreqHz ? _currentFreqHz / 1000 : 0;
+      const freqMhz = freqKhz / 1000;
+      const band = freqToBand(freqMhz) || '';
+      const mode = ft8Engine ? ft8Engine._mode : 'FT8';
+
+      const qsoData = {
+        callsign: q.call.toUpperCase(),
+        frequency: String(freqKhz),
+        mode,
+        band,
+        qsoDate,
+        timeOn: qsoTime,
+        rstSent: q.sentReport || '-00',
+        rstRcvd: q.report || '-00',
+        gridsquare: q.grid || '',
+        comment: 'JTCAT FT8',
+      };
+
+      const result = await saveQsoRecord(qsoData);
+      console.log('[JTCAT Remote] QSO logged:', q.call, result.success ? 'OK' : result.error);
+
+      // Broadcast updated worked QSOs so the phone's spot list updates
+      if (result.success && win && !win.isDestroyed()) {
+        win.webContents.send('jtcat-decode', { cycle: 0, mode, results: [] }); // trigger UI refresh
+      }
+    } catch (err) {
+      console.error('[JTCAT Remote] Log QSO failed:', err.message);
     }
   });
 
@@ -4786,6 +5238,145 @@ app.whenReady().then(() => {
     }
   });
 
+  // --- JTCAT Pop-out Window ---
+  ipcMain.on('jtcat-popout-open', () => {
+    if (jtcatPopoutWin && !jtcatPopoutWin.isDestroyed()) {
+      jtcatPopoutWin.focus();
+      return;
+    }
+    const isMac = process.platform === 'darwin';
+    jtcatPopoutWin = new BrowserWindow({
+      width: 1100,
+      height: 700,
+      title: 'POTACAT — JTCAT',
+      show: false,
+      ...(isMac ? { titleBarStyle: 'hiddenInset' } : { frame: false }),
+      icon: getIconPath(),
+      webPreferences: {
+        preload: path.join(__dirname, 'preload-jtcat-popout.js'),
+        contextIsolation: true,
+        nodeIntegration: false,
+      },
+    });
+    const saved = settings.jtcatPopoutBounds;
+    if (saved && saved.width > 400 && saved.height > 300 && isOnScreen(saved)) {
+      jtcatPopoutWin.setBounds(saved);
+    }
+    jtcatPopoutWin.show();
+    jtcatPopoutWin.setMenuBarVisibility(false);
+    jtcatPopoutWin.loadFile(path.join(__dirname, 'renderer', 'jtcat-popout.html'));
+    jtcatPopoutWin.on('close', () => {
+      if (jtcatPopoutWin && !jtcatPopoutWin.isDestroyed()) {
+        if (!jtcatPopoutWin.isMaximized() && !jtcatPopoutWin.isMinimized()) {
+          settings.jtcatPopoutBounds = jtcatPopoutWin.getBounds();
+          saveSettings(settings);
+        }
+      }
+    });
+    jtcatPopoutWin.on('closed', () => {
+      jtcatPopoutWin = null;
+      if (win && !win.isDestroyed()) {
+        win.webContents.send('jtcat-popout-status', false);
+      }
+    });
+    jtcatPopoutWin.webContents.on('did-finish-load', () => {
+      if (win && !win.isDestroyed()) {
+        win.webContents.send('jtcat-popout-status', true);
+      }
+      // Send current theme
+      const theme = settings.lightMode ? 'light' : 'dark';
+      jtcatPopoutWin.webContents.send('jtcat-popout-theme', theme);
+    });
+    jtcatPopoutWin.webContents.on('before-input-event', (_e, input) => {
+      if (input.key === 'F12' && input.type === 'keyDown') {
+        jtcatPopoutWin.webContents.toggleDevTools();
+      }
+    });
+  });
+
+  ipcMain.on('jtcat-popout-close', (e) => { const w = BrowserWindow.fromWebContents(e.sender); if (w) w.close(); });
+  ipcMain.on('jtcat-popout-minimize', (e) => { const w = BrowserWindow.fromWebContents(e.sender); if (w) w.minimize(); });
+  ipcMain.on('jtcat-popout-maximize', (e) => { const w = BrowserWindow.fromWebContents(e.sender); if (w) { if (w.isMaximized()) w.unmaximize(); else w.maximize(); } });
+  ipcMain.on('jtcat-popout-focus-main', () => { if (win && !win.isDestroyed()) { win.show(); win.focus(); } });
+
+  // --- JTCAT Map Pop-out ---
+  ipcMain.on('jtcat-map-popout', () => {
+    if (jtcatMapPopoutWin && !jtcatMapPopoutWin.isDestroyed()) {
+      jtcatMapPopoutWin.focus();
+      return;
+    }
+    jtcatMapPopoutWin = new BrowserWindow({
+      width: 700, height: 500,
+      frame: false,
+      webPreferences: { preload: path.join(__dirname, 'preload-jtcat-popout.js'), contextIsolation: true, nodeIntegration: false },
+    });
+    jtcatMapPopoutWin.loadFile('renderer/jtcat-map-popout.html');
+    jtcatMapPopoutWin.on('closed', () => { jtcatMapPopoutWin = null; });
+    jtcatMapPopoutWin.webContents.on('did-finish-load', () => {
+      const theme = settings.lightMode ? 'light' : 'dark';
+      jtcatMapPopoutWin.webContents.send('jtcat-popout-theme', theme);
+    });
+  });
+  ipcMain.on('jtcat-popout-theme', (_e, theme) => {
+    if (jtcatPopoutWin && !jtcatPopoutWin.isDestroyed()) {
+      jtcatPopoutWin.webContents.send('jtcat-popout-theme', theme);
+    }
+    if (jtcatMapPopoutWin && !jtcatMapPopoutWin.isDestroyed()) {
+      jtcatMapPopoutWin.webContents.send('jtcat-popout-theme', theme);
+    }
+  });
+
+  // --- Popout QSO state machine (drives engine directly, like ECHOCAT) ---
+  ipcMain.on('jtcat-popout-reply', async (_e, data) => {
+    if (!ft8Engine) return;
+    const myCall = (settings.myCallsign || '').toUpperCase();
+    const myGrid = (settings.grid || '').toUpperCase().substring(0, 4);
+    if (!myCall) return;
+    // Halt any active TX (e.g. CQ) so reply goes out on next boundary
+    if (ft8Engine._txActive) ft8Engine.txComplete();
+    const txMsg = data.call + ' ' + myCall + ' ' + myGrid;
+    ft8Engine.setTxFreq(data.df || 1500);
+    ft8Engine.setRxFreq(data.df || 1500);
+    // TX on opposite slot from the station we're replying to (use slot from decode data, not stale _lastRxSlot)
+    const targetSlot = data.slot || ft8Engine._lastRxSlot;
+    ft8Engine.setTxSlot(targetSlot === 'even' ? 'odd' : (targetSlot === 'odd' ? 'even' : 'auto'));
+    popoutJtcatQso = { mode: 'reply', call: data.call, grid: data.grid, phase: 'reply', txMsg, report: null, sentReport: null, myCall, myGrid, txRetries: 0 };
+    ft8Engine._txEnabled = true;
+    await ft8Engine.setTxMessage(txMsg);
+    ft8Engine.tryImmediateTx();
+    popoutBroadcastQso();
+    console.log('[JTCAT Popout] Reply to', data.call, '— slot:', ft8Engine._txSlot, '—', txMsg);
+  });
+
+  ipcMain.on('jtcat-popout-call-cq', async () => {
+    if (!ft8Engine) return;
+    const myCall = (settings.myCallsign || '').toUpperCase();
+    const myGrid = (settings.grid || '').toUpperCase().substring(0, 4);
+    if (!myCall || !myGrid) return;
+    const txMsg = 'CQ ' + myCall + ' ' + myGrid;
+    // TX on next available slot (opposite of last decoded)
+    const nextSlot = ft8Engine._lastRxSlot === 'even' ? 'odd' : (ft8Engine._lastRxSlot === 'odd' ? 'even' : 'even');
+    ft8Engine.setTxSlot(nextSlot);
+    popoutJtcatQso = { mode: 'cq', call: null, grid: null, phase: 'cq', txMsg, report: null, sentReport: null, myCall, myGrid, txRetries: 0 };
+    ft8Engine._txEnabled = true;
+    await ft8Engine.setTxMessage(txMsg);
+    ft8Engine.tryImmediateTx();
+    popoutBroadcastQso();
+    console.log('[JTCAT Popout] CQ:', txMsg, 'slot:', nextSlot);
+  });
+
+  ipcMain.on('jtcat-popout-cancel-qso', () => {
+    popoutJtcatQso = null;
+    if (ft8Engine) {
+      ft8Engine._txEnabled = false;
+      ft8Engine.setTxMessage('');
+      ft8Engine.setTxSlot('auto');
+      if (ft8Engine._txActive) ft8Engine.txComplete();
+    }
+    popoutBroadcastQso();
+    console.log('[JTCAT Popout] QSO cancelled');
+  });
+
   // Capture a specific rect of the main window (for inline activation map)
   ipcMain.handle('capture-main-window-rect', async (_e, rect) => {
     if (!win || win.isDestroyed()) return { success: false, error: 'Main window not available' };
@@ -4857,9 +5448,20 @@ app.whenReady().then(() => {
     }
   });
 
-  ipcMain.on('tune', (_e, { frequency, mode, bearing }) => {
+  ipcMain.on('tune', (_e, { frequency, mode, bearing, slicePort }) => {
     markUserActive();
-    tuneRadio(frequency, mode, bearing);
+    if (slicePort && smartSdr && smartSdr.connected) {
+      // JTCAT on a separate Flex slice
+      const sliceIndex = slicePort - 5002;
+      const freqHz = Math.round(parseFloat(frequency) * 1000);
+      const flexMode = (mode === 'FT8' || mode === 'FT4' || mode === 'FT2' || mode === 'DIGU')
+        ? 'DIGU' : (mode === 'CW' ? 'CW' : (mode === 'SSB' || mode === 'USB' ? 'USB' : (mode === 'LSB' ? 'LSB' : null)));
+      const filterWidth = settings.digitalFilterWidth || 0;
+      sendCatLog(`JTCAT tune via SmartSDR: slice=${String.fromCharCode(65 + sliceIndex)} freq=${(freqHz / 1e6).toFixed(6)}MHz mode=${flexMode}`);
+      smartSdr.tuneSlice(sliceIndex, freqHz / 1e6, flexMode, filterWidth);
+    } else {
+      tuneRadio(frequency, mode, bearing);
+    }
   });
 
   ipcMain.on('refresh', () => { markUserActive(); refreshSpots(); });
@@ -5562,9 +6164,26 @@ app.whenReady().then(() => {
   ipcMain.on('jtcat-set-tx-freq', (_e, hz) => { if (ft8Engine) ft8Engine.setTxFreq(hz); });
   ipcMain.on('jtcat-set-rx-freq', (_e, hz) => { if (ft8Engine) ft8Engine.setRxFreq(hz); });
   ipcMain.on('jtcat-enable-tx', (_e, enabled) => { if (ft8Engine) ft8Engine._txEnabled = enabled; });
-  ipcMain.on('jtcat-halt-tx', () => { if (ft8Engine) ft8Engine._txEnabled = false; });
+  ipcMain.on('jtcat-halt-tx', () => {
+    if (ft8Engine) {
+      ft8Engine._txEnabled = false;
+      if (ft8Engine._txActive) {
+        ft8Engine.txComplete(); // force stop if currently transmitting
+      }
+    }
+  });
+  ipcMain.on('jtcat-set-tx-msg', (_e, text) => { if (ft8Engine) ft8Engine.setTxMessage(text); });
+  ipcMain.on('jtcat-set-tx-slot', (_e, slot) => { if (ft8Engine) ft8Engine.setTxSlot(slot); });
+  ipcMain.on('jtcat-tx-complete', () => { if (ft8Engine) ft8Engine.txComplete(); });
   ipcMain.on('jtcat-audio', (_e, buf) => {
     if (ft8Engine) ft8Engine.feedAudio(new Float32Array(buf));
+  });
+  ipcMain.on('jtcat-quiet-freq', (_e, hz) => {
+    jtcatQuietFreq = hz;
+  });
+  ipcMain.on('jtcat-spectrum', (_e, bins) => {
+    if (remoteServer && remoteServer.hasClient()) remoteServer.broadcastJtcatSpectrum(bins);
+    if (jtcatPopoutWin && !jtcatPopoutWin.isDestroyed()) jtcatPopoutWin.webContents.send('jtcat-spectrum', { bins });
   });
 
   // --- QRZ single callsign lookup (for Quick Log) ---

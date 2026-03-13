@@ -59,6 +59,7 @@
       <button class="mp-btn" data-mode="CW">CW</button>
       <button class="mp-btn" data-mode="FT8">FT8</button>
       <button class="mp-btn" data-mode="FT4">FT4</button>
+      <button class="mp-btn" data-mode="FT2">FT2</button>
       <button class="mp-btn" data-mode="FM">FM</button>
       <button class="mp-btn" data-mode="AM">AM</button>
       <button class="mp-btn" data-mode="RTTY">RTTY</button>
@@ -191,6 +192,7 @@
       <button class="tab" data-tab="log">Log</button>
       <button class="tab" data-tab="logbook">Logbook</button>
       <button class="tab" data-tab="activate">Activate <span id="tab-activate-badge" class="tab-badge hidden">0</span></button>
+      <button class="tab" data-tab="ft8">FT8</button>
     </div>
 
     <!-- Filter toolbar -->
@@ -406,6 +408,48 @@
     </div>
 
     <!-- Bottom controls -->
+    <!-- FT8/JTCAT view -->
+    <div id="ft8-view" class="hidden">
+      <div id="ft8-band-bar">
+        <button class="ft8-band-btn" data-band="80m" data-freq="3573">80</button>
+        <button class="ft8-band-btn" data-band="40m" data-freq="7074">40</button>
+        <button class="ft8-band-btn" data-band="30m" data-freq="10136">30</button>
+        <button class="ft8-band-btn active" data-band="20m" data-freq="14074">20</button>
+        <button class="ft8-band-btn" data-band="17m" data-freq="18100">17</button>
+        <button class="ft8-band-btn" data-band="15m" data-freq="21074">15</button>
+        <button class="ft8-band-btn" data-band="12m" data-freq="24915">12</button>
+        <button class="ft8-band-btn" data-band="10m" data-freq="28074">10</button>
+        <button class="ft8-band-btn" data-band="6m" data-freq="50313">6</button>
+      </div>
+      <div id="ft8-status-strip">
+        <select id="ft8-mode-select" class="ft8-mode-select">
+          <option value="FT8">FT8</option>
+          <option value="FT4">FT4</option>
+          <option value="FT2">FT2</option>
+        </select>
+        <span id="ft8-rx-tx-badge" class="ft8-rx-badge">RX</span>
+        <span id="ft8-cycle-indicator">--</span>
+        <span id="ft8-countdown">--</span>
+        <span id="ft8-tx-freq-display" class="ft8-tx-freq">TX: 1500 Hz</span>
+        <span id="ft8-sync-status">Sync: --</span>
+        <button type="button" id="ft8-cq-filter" class="ft8-filter-btn" title="Show only CQ and 73">CQ/73</button>
+        <button type="button" id="ft8-erase-btn" class="ft8-erase-btn">Erase</button>
+      </div>
+      <div id="ft8-decode-log" class="ft8-decode-log">
+        <div class="ft8-empty">Tap a band to start</div>
+      </div>
+      <canvas id="ft8-waterfall" class="ft8-waterfall hidden" width="320" height="100"></canvas>
+      <div id="ft8-control-bar">
+        <button type="button" id="ft8-tx-btn" class="ft8-ctrl-btn ft8-tx-btn">TX</button>
+        <button type="button" id="ft8-slot-btn" class="ft8-ctrl-btn ft8-slot-btn">Auto</button>
+        <button type="button" id="ft8-cq-btn" class="ft8-ctrl-btn ft8-cq-btn">CQ</button>
+        <span id="ft8-tx-msg" class="ft8-tx-msg">--</span>
+        <button type="button" id="ft8-log-btn" class="ft8-ctrl-btn ft8-log-btn">LOG</button>
+        <button type="button" id="ft8-wf-toggle" class="ft8-ctrl-btn ft8-wf-btn" title="Toggle waterfall">WF</button>
+      </div>
+      <div id="ft8-qso-exchange" class="ft8-qso-exchange hidden"></div>
+    </div>
+
     <div id="bottom-bar">
       <button id="audio-btn" type="button" class="audio-button">
         <span class="audio-icon">&#x1F50A;</span>
