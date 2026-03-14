@@ -63,7 +63,13 @@
     },
     "mac": {
       "target": "dmg",
-      "category": "public.app-category.utilities"
+      "category": "public.app-category.utilities",
+      "entitlements": "build/entitlements.mac.plist",
+      "entitlementsInherit": "build/entitlements.mac.plist",
+      "extendInfo": {
+        "NSMicrophoneUsageDescription": "POTACAT needs microphone access for ECHOCAT remote audio.",
+        "NSCameraUsageDescription": "POTACAT does not use the camera but WebRTC requires this permission."
+      }
     },
     "linux": {
       "target": [

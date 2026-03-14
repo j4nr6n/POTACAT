@@ -5024,7 +5024,26 @@ function render() {
 
       for (const cell of cells) {
         const td = document.createElement('td');
-        td.textContent = cell.val;
+        // Make park ref and name clickable links to park/summit pages
+        if ((cell.col === 'reference' || cell.col === 'parkName') && s.reference && s.source !== 'net') {
+          let url;
+          if (s.source === 'sota') url = `https://www.sotadata.org.uk/en/summit/${s.reference}`;
+          else if (s.source === 'wwff') url = `https://wwff.co/directory/?showRef=${s.reference}`;
+          else if (s.source === 'llota') url = `https://llota.app/lighthouse/${s.reference}`;
+          else url = `https://pota.app/#/park/${s.reference}`;
+          const a = document.createElement('a');
+          a.textContent = cell.val;
+          a.href = '#';
+          a.className = 'park-link';
+          a.addEventListener('click', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            window.api.openExternal(url);
+          });
+          td.appendChild(a);
+        } else {
+          td.textContent = cell.val;
+        }
         if (cell.col) td.setAttribute('data-col', cell.col);
         if (cell.cls) td.className = cell.cls;
         if (cell.col === 'comments' && cell.val) td.title = cell.val;

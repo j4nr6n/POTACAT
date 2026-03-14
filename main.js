@@ -2343,7 +2343,21 @@ function broadcastRemoteRadioStatus() {
 }
 
 // --- Remote Audio (hidden BrowserWindow for WebRTC) ---
-function startRemoteAudio() {
+async function startRemoteAudio() {
+  // On macOS, request microphone permission before creating the audio window.
+  // Without this, getUserMedia() silently returns an empty/silent stream.
+  if (process.platform === 'darwin') {
+    const { systemPreferences } = require('electron');
+    const micStatus = systemPreferences.getMediaAccessStatus('microphone');
+    if (micStatus !== 'granted') {
+      const granted = await systemPreferences.askForMediaAccess('microphone');
+      if (!granted) {
+        console.error('[Echo CAT] Microphone permission denied by macOS');
+        return;
+      }
+    }
+  }
+
   // If window already exists, tell it to restart a fresh WebRTC session
   if (remoteAudioWin && !remoteAudioWin.isDestroyed()) {
     remoteAudioWin.webContents.send('remote-audio-start', {
@@ -2363,6 +2377,9 @@ function startRemoteAudio() {
       nodeIntegration: false,
     },
   });
+
+  // Grant media permissions to the audio window's session
+  remoteAudioWin.webContents.session.setPermissionRequestHandler((_wc, perm, cb) => cb(true));
 
   remoteAudioWin.loadFile(path.join(__dirname, 'renderer', 'remote-audio.html'));
 

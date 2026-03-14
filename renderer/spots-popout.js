@@ -185,8 +185,8 @@ function render() {
       <td>${freqStr}</td>
       <td>${s.mode || ''}</td>
       <td>${(s.source || '').toUpperCase()}</td>
-      <td>${s.reference || ''}</td>
-      <td style="max-width:160px;">${s.parkName || ''}</td>
+      <td>${s.reference && s.source !== 'net' ? `<a class="park-link" href="#" data-ref="${s.reference}" data-source="${s.source || ''}">${s.reference}</a>` : (s.reference || '')}</td>
+      <td style="max-width:160px;">${s.reference && s.source !== 'net' && s.parkName ? `<a class="park-link" href="#" data-ref="${s.reference}" data-source="${s.source || ''}">${s.parkName}</a>` : (s.parkName || '')}</td>
       <td>${s.locationDesc || ''}</td>
       <td>${(s.lat != null && s.lon != null) ? latLonToGridLocal(s.lat, s.lon).slice(0, 4) : ''}</td>
       <td>${dist}</td>
@@ -201,6 +201,22 @@ function render() {
       e.preventDefault();
       e.stopPropagation();
       window.api.openExternal(`https://www.qrz.com/db/${s.callsign}`);
+    });
+
+    // Park links
+    tr.querySelectorAll('.park-link').forEach(a => {
+      a.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        const ref = a.dataset.ref;
+        const src = a.dataset.source;
+        let url;
+        if (src === 'sota') url = `https://www.sotadata.org.uk/en/summit/${ref}`;
+        else if (src === 'wwff') url = `https://wwff.co/directory/?showRef=${ref}`;
+        else if (src === 'llota') url = `https://llota.app/lighthouse/${ref}`;
+        else url = `https://pota.app/#/park/${ref}`;
+        window.api.openExternal(url);
+      });
     });
 
     // Log button

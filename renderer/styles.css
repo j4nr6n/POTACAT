@@ -974,6 +974,16 @@ a.qrz-link:hover {
   color: #81d4fa;
 }
 
+a.park-link {
+  color: var(--text-primary);
+  text-decoration: none;
+  cursor: pointer;
+}
+a.park-link:hover {
+  text-decoration: underline;
+  color: var(--accent-blue);
+}
+
 .freq-link {
   color: var(--accent-blue);
   cursor: pointer;

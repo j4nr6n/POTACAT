@@ -131,6 +131,34 @@ Elecraft radios support Kenwood CAT commands. Serial CAT works well for basic fr
 | Baud rate | 38400 (default for most Elecraft radios) |
 | Disable DTR/RTS | Usually not needed |
 
+#### Yaesu FT-891
+
+| Setting | Value |
+|---------|-------|
+| Connection type | Serial CAT (Kenwood) |
+| Baud rate | 38400 |
+| Disable DTR/RTS | No |
+
+The FT-891 uses 9-digit `FA` commands and `MD0` syntax (with VFO selector). POTACAT auto-detects this on first connection.
+
+**ATU / ATAS-120A:** The FT-891 does not support ATU control via CAT commands. The `AC` (Antenna Tuner Control) command is rejected regardless of format. If you use an ATAS-120A or similar motorized antenna, use the physical TNR button on the radio. POTACAT's auto-tune-on-band-change feature will not work with this radio.
+
+**Split mode:** The FT-891 does not support the `FT` (Function TX) command for setting split mode via CAT. POTACAT skips this command automatically on Yaesu radios.
+
+#### Yaesu FT-991A / FTDX101D
+
+| Setting | Value |
+|---------|-------|
+| Connection type | Serial CAT (Kenwood) |
+| Baud rate | 38400 |
+| Disable DTR/RTS | Usually not needed |
+
+These radios support the `AC` command for ATU control. POTACAT's auto-tune-on-band-change feature works with the built-in antenna tuner.
+
+#### Yaesu with Win4Yaesu Suite
+
+If you run Win4Yaesu Suite alongside POTACAT, see the [Win4Yaesu section](#using-potacat-with-win4yaesu-suite) below for virtual COM port setup.
+
 ---
 
 ## Other Rig (Hamlib)
