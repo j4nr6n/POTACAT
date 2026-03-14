@@ -367,6 +367,36 @@
           <input type="text" id="dx-spot-note" class="dx-command-field dx-spot-note" maxlength="60" placeholder="Note">
           <button type="button" id="dx-command-send" class="dx-command-btn">Send</button>
         </div>
+        <div id="banner-logger" class="banner-logger hidden">
+          <select id="bl-type" class="bl-field bl-type" title="Log type">
+            <option value="">Contact</option>
+            <option value="pota">POTA</option>
+            <option value="sota">SOTA</option>
+            <option value="wwff">WWFF</option>
+            <option value="llota">LLOTA</option>
+          </select>
+          <input type="text" id="bl-ref" class="bl-field bl-ref hidden" placeholder="Ref" maxlength="20" spellcheck="false" autocomplete="off" style="text-transform:uppercase;">
+          <input type="text" id="bl-callsign" class="bl-field bl-callsign" placeholder="Callsign" maxlength="20" spellcheck="false" autocomplete="off" autocapitalize="characters">
+          <input type="text" id="bl-name" class="bl-field bl-name" readonly tabindex="-1" placeholder="Name">
+          <input type="text" id="bl-freq" class="bl-field bl-freq" placeholder="Freq MHz" maxlength="10" inputmode="numeric">
+          <select id="bl-mode" class="bl-field bl-mode">
+            <option value="SSB">SSB</option>
+            <option value="USB">USB</option>
+            <option value="LSB">LSB</option>
+            <option value="CW">CW</option>
+            <option value="FT8">FT8</option>
+            <option value="FT4">FT4</option>
+            <option value="FM">FM</option>
+            <option value="AM">AM</option>
+            <option value="RTTY">RTTY</option>
+          </select>
+          <div class="bl-rst-group"><label class="bl-rst-label">S</label><input type="text" id="bl-rst-sent" class="bl-field bl-rst" maxlength="3" inputmode="numeric" value="59"></div>
+          <div class="bl-rst-group"><label class="bl-rst-label">R</label><input type="text" id="bl-rst-rcvd" class="bl-field bl-rst" maxlength="3" inputmode="numeric" value="59"></div>
+          <div class="bl-rst-group"><label class="bl-rst-label">UTC</label><input type="text" id="bl-time" class="bl-field bl-time" placeholder="HH:MM" maxlength="5"></div>
+          <input type="text" id="bl-notes" class="bl-field bl-notes" placeholder="Notes" maxlength="80" spellcheck="false">
+          <label class="bl-respot-label" id="bl-respot-label"><input type="checkbox" id="bl-respot" checked> Spot</label>
+          <button type="button" id="bl-log-btn" class="bl-log-btn">Log</button>
+        </div>
       </div>
       <div id="split-splitter" class="hidden"></div>
       <div id="map-pane" class="hidden">
@@ -873,6 +903,9 @@
       <label>Max Spot Age (minutes):
         <input type="number" id="set-max-age" min="1" max="120" value="5">
       </label>
+      <label>SOTA Max Spot Age (minutes):
+        <input type="number" id="set-sota-max-age" min="5" max="120" value="30">
+      </label>
       <label>Refresh Interval (seconds):
         <input type="number" id="set-refresh-interval" min="15" max="300" step="15" value="30">
       </label>
@@ -956,6 +989,8 @@
     <fieldset class="source-toggles">
       <legend>Logging</legend>
       <label class="checkbox-label"><input type="checkbox" id="set-enable-logging"> Enable QSO Logging</label>
+      <label class="checkbox-label" style="margin-left:12px;"><input type="checkbox" id="set-enable-banner-logger"> Bottom Banner Logger</label>
+      <span class="help-text" style="margin-left:24px;display:block;">Persistent logging bar below the spot table for rapid QSO entry</span>
       <div id="logging-config" class="radio-sub hidden">
         <label>ADIF Log File:
           <div style="display:flex;gap:6px;margin-top:4px;">

@@ -17,6 +17,7 @@ let enableSplitView = true; // allow Table+Map simultaneously
 let distUnit = 'mi';    // 'mi' or 'km'
 let watchlist = new Set(); // uppercase callsigns
 let maxAgeMin = 5;       // max spot age in minutes
+let sotaMaxAgeMin = 30;  // SOTA max spot age in minutes
 let scanDwell = 7;       // seconds per frequency during scan
 let enablePota = true;
 let enableSota = false;
@@ -32,6 +33,7 @@ let enableBandActivity = false;
 let licenseClass = 'none';
 let hideOutOfBand = false;
 let enableLogging = false;
+let enableBannerLogger = false;
 let n1mmRst = false; // N1MM-style single-field RST inputs
 let defaultPower = 100;
 let tuneClick = false;
@@ -150,6 +152,7 @@ const settingsCancel = document.getElementById('settings-cancel');
 const setGrid = document.getElementById('set-grid');
 const setDistUnit = document.getElementById('set-dist-unit');
 const setMaxAge = document.getElementById('set-max-age');
+const setSotaMaxAge = document.getElementById('set-sota-max-age');
 const setRefreshInterval = document.getElementById('set-refresh-interval');
 const setScanDwell = document.getElementById('set-scan-dwell');
 const setWatchlist = document.getElementById('set-watchlist');
@@ -371,6 +374,7 @@ const setEnableSolar = document.getElementById('set-enable-solar');
 const setEnableBandActivity = document.getElementById('set-enable-band-activity');
 const setShowBearing = document.getElementById('set-show-bearing');
 const setEnableLogging = document.getElementById('set-enable-logging');
+const setEnableBannerLogger = document.getElementById('set-enable-banner-logger');
 const setN1mmRst = document.getElementById('set-n1mm-rst');
 const loggingConfig = document.getElementById('logging-config');
 const setAdifLogPath = document.getElementById('set-adif-log-path');
@@ -702,10 +706,12 @@ async function loadPrefs() {
   updateSolarVisibility();
   qrzFullName = settings.qrzFullName === true;
   enableLogging = settings.enableLogging === true;
+  enableBannerLogger = settings.enableBannerLogger === true;
   n1mmRst = settings.n1mmRst === true;
   applyRstMode();
   defaultPower = parseInt(settings.defaultPower, 10) || 100;
   updateLoggingVisibility();
+  updateBannerLoggerVisibility();
   showBearing = settings.showBearing === true;
   updateBearingVisibility();
   licenseClass = settings.licenseClass || 'none';
@@ -783,6 +789,7 @@ async function loadPrefs() {
     if (saved && saved.maxAgeMin) { maxAgeMin = saved.maxAgeMin; }
     else { maxAgeMin = parseInt(settings.maxAgeMin, 10) || 5; }
   } catch { maxAgeMin = parseInt(settings.maxAgeMin, 10) || 5; }
+  sotaMaxAgeMin = parseInt(settings.sotaMaxAge, 10) || 30;
   updateHeaders();
 
   // Restore view state
@@ -1393,6 +1400,247 @@ function updateBearingVisibility() {
     spotsTable.classList.remove('bearing-enabled');
   }
 }
+
+// --- Banner Logger ---
+const bannerLoggerEl = document.getElementById('banner-logger');
+const blType = document.getElementById('bl-type');
+const blRef = document.getElementById('bl-ref');
+const blCallsign = document.getElementById('bl-callsign');
+const blName = document.getElementById('bl-name');
+const blFreq = document.getElementById('bl-freq');
+const blMode = document.getElementById('bl-mode');
+const blRstSent = document.getElementById('bl-rst-sent');
+const blRstRcvd = document.getElementById('bl-rst-rcvd');
+const blTime = document.getElementById('bl-time');
+const blNotes = document.getElementById('bl-notes');
+const blRespot = document.getElementById('bl-respot');
+const blRespotLabel = document.getElementById('bl-respot-label');
+const blLogBtn = document.getElementById('bl-log-btn');
+let blFreqEdited = false;  // user manually edited freq — don't auto-fill
+let blModeEdited = false;  // user manually edited mode — don't auto-fill
+let blTimeEdited = false;  // user manually edited time — don't auto-fill
+let blClockTimer = null;
+let blLookupTimer = null;
+
+function updateBannerLoggerVisibility() {
+  const show = enableBannerLogger && enableLogging && appMode === 'hunter';
+  bannerLoggerEl.classList.toggle('hidden', !show);
+  if (show && !blClockTimer) {
+    updateBlClock();
+    blClockTimer = setInterval(updateBlClock, 1000);
+  } else if (!show && blClockTimer) {
+    clearInterval(blClockTimer);
+    blClockTimer = null;
+  }
+}
+
+function updateBlClock() {
+  if (blTimeEdited) return;
+  const now = new Date();
+  const hh = String(now.getUTCHours()).padStart(2, '0');
+  const mm = String(now.getUTCMinutes()).padStart(2, '0');
+  blTime.value = hh + ':' + mm;
+}
+
+function updateBlFreqFromRadio() {
+  if (blFreqEdited || !radioFreqKhz) return;
+  blFreq.value = (radioFreqKhz / 1000).toFixed(3);
+}
+
+function updateBlModeFromRadio() {
+  if (blModeEdited || !radioMode) return;
+  const m = radioMode.toUpperCase();
+  const mapped = m === 'USB' || m === 'LSB' ? m : m === 'CW' || m === 'CW-R' || m === 'CWR' ? 'CW' : m === 'FT8' ? 'FT8' : m === 'FT4' ? 'FT4' : m === 'FM' || m === 'NFM' ? 'FM' : m === 'AM' ? 'AM' : m === 'RTTY' || m === 'RTTY-R' ? 'RTTY' : 'SSB';
+  blMode.value = mapped;
+  updateBlRstDefaults(mapped);
+}
+
+/** Set RST defaults: 59 for phone, 599 for CW/digital */
+function updateBlRstDefaults(mode) {
+  const isPhone = mode === 'SSB' || mode === 'USB' || mode === 'LSB' || mode === 'FM' || mode === 'AM';
+  const def = isPhone ? '59' : '599';
+  blRstSent.value = def;
+  blRstRcvd.value = def;
+}
+
+function updateBlRespotVisibility() {
+  const type = blType.value;
+  // Show respot checkbox for park/summit types or DX cluster contacts
+  const canRespot = (type === 'pota' || type === 'wwff' || type === 'llota') ||
+                    (type === '' && clusterConnected);
+  blRespotLabel.classList.toggle('hidden', !canRespot);
+}
+
+// Type dropdown: show/hide ref field, update respot visibility
+blType.addEventListener('change', () => {
+  const type = blType.value;
+  const needsRef = type === 'pota' || type === 'sota' || type === 'wwff' || type === 'llota';
+  blRef.classList.toggle('hidden', !needsRef);
+  blRef.placeholder = type === 'pota' ? 'K-1234' : type === 'sota' ? 'W4C/CM-001' : type === 'wwff' ? 'KFF-1234' : type === 'llota' ? 'US-0001' : 'Ref';
+  if (needsRef) blRef.focus();
+  updateBlRespotVisibility();
+});
+
+// User-edit flags: reset after each QSO save
+blFreq.addEventListener('input', () => { blFreqEdited = true; });
+blMode.addEventListener('change', () => {
+  blModeEdited = true;
+  updateBlRstDefaults(blMode.value);
+});
+blTime.addEventListener('input', () => { blTimeEdited = true; });
+
+// QRZ lookup on callsign input (debounced)
+blCallsign.addEventListener('input', () => {
+  blCallsign.value = blCallsign.value.toUpperCase();
+  clearTimeout(blLookupTimer);
+  const cs = blCallsign.value.trim();
+  if (cs.length < 3) { blName.value = ''; return; }
+  blLookupTimer = setTimeout(async () => {
+    const cached = qrzData.get(cs.split('/')[0]);
+    if (cached) { blName.value = qrzDisplayName(cached); return; }
+    try {
+      const result = await window.api.qrzLookup(cs);
+      if (result && blCallsign.value.trim().toUpperCase() === cs) {
+        qrzData.set(cs.split('/')[0], result);
+        blName.value = qrzDisplayName(result);
+      }
+    } catch {}
+  }, 400);
+});
+
+// Save QSO from banner logger
+async function saveBannerQso() {
+  const callsign = blCallsign.value.trim().toUpperCase();
+  if (!callsign) { blCallsign.focus(); return; }
+  const frequency = blFreq.value.trim();
+  if (!frequency) { blFreq.focus(); return; }
+  const type = blType.value;
+  const ref = blRef.value.trim().toUpperCase();
+  const needsRef = type === 'pota' || type === 'sota' || type === 'wwff' || type === 'llota';
+  if (needsRef && !ref) { blRef.focus(); return; }
+  const mode = blMode.value;
+  const rstSent = blRstSent.value.trim() || '59';
+  const rstRcvd = blRstRcvd.value.trim() || '59';
+  const timeVal = blTime.value.trim();
+  const now = new Date();
+  const qsoDate = now.toISOString().slice(0, 10).replace(/-/g, '');
+  const timeParts = timeVal.replace(':', '');
+  const timeOn = timeParts.length === 4 ? timeParts + '00' : String(now.getUTCHours()).padStart(2, '0') + String(now.getUTCMinutes()).padStart(2, '0') + '00';
+  const freqMhz = parseFloat(frequency);
+  const freqKhz = freqMhz * 1000;
+  const band = freqToBandActivator(freqKhz) || '';
+  const qrzInfo = qrzData.get(callsign.split('/')[0]);
+
+  // Build sig/sigInfo/ref fields based on type
+  let sig = '', sigInfo = '', potaRef = '', sotaRef = '', wwffRef = '';
+  if (type === 'pota' && ref) { sig = 'POTA'; potaRef = ref; sigInfo = ref; }
+  else if (type === 'sota' && ref) { sig = 'SOTA'; sotaRef = ref; sigInfo = ref; }
+  else if (type === 'wwff' && ref) { sig = 'WWFF'; wwffRef = ref; sigInfo = ref; }
+  else if (type === 'llota' && ref) { sig = 'LLOTA'; sigInfo = ref; }
+  const notes = blNotes.value.trim();
+  const commentBase = [notes, sigInfo ? `[${sig} ${sigInfo}]` : ''].filter(Boolean).join(' ');
+
+  // Respot
+  const wantsRespot = blRespot.checked && !blRespotLabel.classList.contains('hidden');
+  const opQrz = qrzData.get(callsign.split('/')[0]);
+  const opFirstname = (opQrz && (cleanQrzName(opQrz.nickname) || cleanQrzName(opQrz.fname))) || 'OM';
+  let respotCommentText = '';
+  if (wantsRespot) {
+    const tmpl = (type === '' && clusterConnected) ? dxRespotTemplate : respotTemplate;
+    respotCommentText = tmpl.replace(/\{rst\}/gi, rstSent).replace(/\{QTH\}/gi, grid).replace(/\{mycallsign\}/gi, myCallsign).replace(/\{op_firstname\}/gi, opFirstname);
+  }
+
+  // Park location lookup for POTA
+  let parkLocState = '', parkLocGrid = '';
+  if (sig === 'POTA' && potaRef) {
+    try {
+      const parkData = await window.api.getPark(potaRef);
+      if (parkData) {
+        const locParts = (parkData.locationDesc || '').split('-');
+        if (locParts.length >= 2) parkLocState = locParts.slice(1).join('-');
+        parkLocGrid = parkData.grid || '';
+      }
+    } catch {}
+  }
+
+  const qsoData = {
+    callsign,
+    frequency: String(freqKhz),
+    mode,
+    qsoDate,
+    timeOn,
+    rstSent,
+    rstRcvd,
+    txPower: String(defaultPower),
+    band,
+    sig,
+    sigInfo,
+    potaRef,
+    sotaRef,
+    wwffRef,
+    name: qrzInfo ? [cleanQrzName(qrzInfo.nickname) || cleanQrzName(qrzInfo.fname), cleanQrzName(qrzInfo.name)].filter(Boolean).join(' ') : '',
+    state: parkLocState || (!sig && qrzInfo ? (qrzInfo.state || '') : ''),
+    county: !parkLocState && !sig && qrzInfo && qrzInfo.state && qrzInfo.county ? `${qrzInfo.state},${qrzInfo.county}` : '',
+    gridsquare: parkLocGrid || (qrzInfo ? (qrzInfo.grid || '') : ''),
+    country: qrzInfo ? (qrzInfo.country || '') : '',
+    comment: commentBase,
+    respot: wantsRespot && type === 'pota',
+    wwffRespot: wantsRespot && type === 'wwff',
+    wwffReference: wantsRespot && type === 'wwff' ? ref : '',
+    llotaRespot: wantsRespot && type === 'llota',
+    llotaReference: wantsRespot && type === 'llota' ? ref : '',
+    dxcRespot: wantsRespot && type === '' && clusterConnected,
+    respotComment: wantsRespot ? respotCommentText : '',
+  };
+
+  blLogBtn.disabled = true;
+  blLogBtn.textContent = 'Saving\u2026';
+  try {
+    const result = await window.api.saveQso(qsoData);
+    if (result && result.success) {
+      // Keep type and ref sticky across QSOs (user is likely logging same park)
+      blCallsign.value = '';
+      blName.value = '';
+      blNotes.value = '';
+      blFreqEdited = false;
+      blModeEdited = false;
+      blTimeEdited = false;
+      updateBlFreqFromRadio();
+      updateBlModeFromRadio();
+      updateBlClock();
+      blCallsign.focus();
+    } else {
+      console.error('[BannerLogger] Save failed:', result);
+    }
+  } catch (err) {
+    console.error('[BannerLogger] Save error:', err);
+  } finally {
+    blLogBtn.disabled = false;
+    blLogBtn.textContent = 'Log';
+  }
+}
+
+blLogBtn.addEventListener('click', saveBannerQso);
+
+// Enter key flow: callsign → RST Sent → RST Rcvd → save
+blCallsign.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') { e.preventDefault(); blRstSent.focus(); blRstSent.select(); }
+});
+blRstSent.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') { e.preventDefault(); blRstRcvd.focus(); blRstRcvd.select(); }
+});
+blRstRcvd.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') { e.preventDefault(); saveBannerQso(); }
+});
+blRef.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') { e.preventDefault(); blCallsign.focus(); }
+});
+blFreq.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') { e.preventDefault(); blMode.focus(); }
+});
+blMode.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') { e.preventDefault(); blRstSent.focus(); blRstSent.select(); }
+});
 
 // --- Tune confirmation click ---
 let audioCtx = null;
@@ -2472,9 +2720,8 @@ function getFiltered() {
       // PSKReporter already limits to 15 min server-side; don't apply client max-age
       if (spotAgeSecs(s.spotTime) > 900) return false;
     } else if (s.source === 'sota') {
-      // SOTA spots are posted once by a human (not re-spotted like POTA);
-      // activations typically last under an hour so use a fixed 60-minute window
-      if (spotAgeSecs(s.spotTime) > 3600) return false;
+      // SOTA spots are posted once by a human (not re-spotted like POTA)
+      if (spotAgeSecs(s.spotTime) > sotaMaxAgeMin * 60) return false;
     } else {
       if (spotAgeSecs(s.spotTime) > maxAgeSecs) return false;
     }
@@ -5627,6 +5874,7 @@ async function openSettingsDialog() {
   setGrid.value = s.grid || '';
   setDistUnit.value = s.distUnit || 'mi';
   setMaxAge.value = s.maxAgeMin || 5;
+  setSotaMaxAge.value = s.sotaMaxAge || 30;
   setRefreshInterval.value = s.refreshInterval || 30;
   setScanDwell.value = s.scanDwell || 7;
   setCwXit.value = s.cwXit || 0;
@@ -5731,6 +5979,7 @@ async function openSettingsDialog() {
   setEnablePskr.checked = s.enablePskr === true;
   pskrConfig.classList.toggle('hidden', !s.enablePskr);
   setEnableLogging.checked = s.enableLogging === true;
+  setEnableBannerLogger.checked = s.enableBannerLogger === true;
   setN1mmRst.checked = s.n1mmRst === true;
   if (s.adifLogPath) {
     setAdifLogPath.value = s.adifLogPath;
@@ -5845,6 +6094,7 @@ settingsCancel.addEventListener('click', async () => {
 settingsSave.addEventListener('click', async () => {
   const watchlistRaw = setWatchlist.value.trim();
   const maxAgeVal = parseInt(setMaxAge.value, 10) || 5;
+  const sotaMaxAgeVal = parseInt(setSotaMaxAge.value, 10) || 30;
   const refreshIntervalVal = Math.max(15, parseInt(setRefreshInterval.value, 10) || 30);
   const dwellVal = parseInt(setScanDwell.value, 10) || 7;
   const cwXitVal = parseInt(setCwXit.value, 10) || 0;
@@ -5972,6 +6222,7 @@ settingsSave.addEventListener('click', async () => {
     grid: setGrid.value.trim() || 'FN20jb',
     distUnit: setDistUnit.value,
     maxAgeMin: maxAgeVal,
+    sotaMaxAge: sotaMaxAgeVal,
     refreshInterval: refreshIntervalVal,
     scanDwell: dwellVal,
     cwXit: cwXitVal,
@@ -6036,6 +6287,7 @@ settingsSave.addEventListener('click', async () => {
     potaParksPath: potaParksPath,
     hideWorkedParks: hideWorkedParksEnabled,
     enableLogging: loggingEnabled,
+    enableBannerLogger: setEnableBannerLogger.checked,
     n1mmRst: n1mmRstEnabled,
     adifLogPath: adifLogPath,
     defaultPower: defaultPowerVal,
@@ -6080,6 +6332,7 @@ settingsSave.addEventListener('click', async () => {
   grid = setGrid.value.trim();
   distUnit = setDistUnit.value;
   maxAgeMin = maxAgeVal;
+  sotaMaxAgeMin = sotaMaxAgeVal;
   scanDwell = dwellVal;
   watchlist = parseWatchlist(watchlistRaw);
   enablePota = potaEnabled;
@@ -6114,10 +6367,12 @@ settingsSave.addEventListener('click', async () => {
   if (showTable || showMap) updateViewLayout();
   qrzFullName = qrzFullNameEnabled;
   enableLogging = loggingEnabled;
+  enableBannerLogger = setEnableBannerLogger.checked;
   n1mmRst = n1mmRstEnabled;
   applyRstMode();
   defaultPower = defaultPowerVal;
   updateLoggingVisibility();
+  updateBannerLoggerVisibility();
   applyTheme(lightModeEnabled);
   if (popoutOpen) window.api.sendPopoutTheme(lightModeEnabled ? 'light' : 'dark');
   if (qsoPopoutOpen) window.api.sendQsoPopoutTheme(lightModeEnabled ? 'light' : 'dark');
@@ -7374,6 +7629,7 @@ window.api.onCatFrequency((hz) => {
     if (bandFilterEl._updateText) bandFilterEl._updateText();
   }
   playTuneClick();
+  updateBlFreqFromRadio();
   if (showTable || showMap) render();
 });
 
@@ -7381,6 +7637,7 @@ window.api.onCatMode((mode) => {
   const oldFilter = radioMode ? radioModeToFilter(radioMode) : null;
   radioMode = mode;
   const newFilter = radioModeToFilter(mode);
+  updateBlModeFromRadio();
   const radioModeCb = modeFilterEl.querySelector('input[value="radio"]');
   if (radioModeCb && radioModeCb.checked && newFilter !== oldFilter) {
     if (modeFilterEl._updateText) modeFilterEl._updateText();
@@ -8590,6 +8847,7 @@ function setAppMode(mode) {
     }
     if (eventBannerEl) eventBannerEl.classList.add('hidden');
     if (dxCommandBarEl) dxCommandBarEl.classList.add('hidden');
+    if (bannerLoggerEl) bannerLoggerEl.classList.add('hidden');
     // Show activator
     activatorView.classList.remove('hidden');
     // Apply activator-spots or activator-rbn layout if toggled on
@@ -8624,6 +8882,7 @@ function setAppMode(mode) {
     if (headerEl) headerEl.classList.remove('hidden');
     if (mainEl) mainEl.classList.remove('hidden');
     if (dxCommandBarEl) dxCommandBarEl.classList.remove('hidden');
+    updateBannerLoggerVisibility();
     // Hide activator
     activatorView.classList.add('hidden');
     // Clean up activator-spots and activator-rbn layout
