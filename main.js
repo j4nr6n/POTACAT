@@ -1765,6 +1765,10 @@ function connectRemote() {
     if (workedQsos.size > 0) {
       remoteServer.sendWorkedQsos([...workedQsos.entries()]);
     }
+    // Restore saved ECHOCAT filters (bands, modes, regions, sort, etc.)
+    if (settings.echoFilters) {
+      remoteServer.sendFiltersToClient(settings.echoFilters);
+    }
     // Push settings needed by phone (callsign, grid, respot defaults, cluster state)
     updateRemoteSettings();
     if (win && !win.isDestroyed()) {
@@ -1878,6 +1882,12 @@ function connectRemote() {
     // Refresh spots with new sources
     refreshSpots();
     console.log('[Echo CAT] Sources updated:', newSettings);
+  });
+
+  remoteServer.on('set-echo-filters', (filters) => {
+    if (!filters) return;
+    settings.echoFilters = filters;
+    saveSettings(settings);
   });
 
   remoteServer.on('switch-rig', ({ rigId }) => {

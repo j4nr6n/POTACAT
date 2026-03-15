@@ -545,6 +545,10 @@
         updateRigSelect(msg.data || [], msg.activeRigId);
         break;
 
+      case 'echo-filters':
+        applyFilters(msg.data);
+        break;
+
       case 'log-ok':
         logSaveBtn.disabled = false;
         ltSave.disabled = false;
@@ -1019,9 +1023,9 @@
   }
 
   // Initialize band and region dropdowns
-  initMultiDropdown(bandFilterEl, () => { renderSpots(); if (activeTab === 'map') renderMapSpots(); });
-  initMultiDropdown(modeFilterEl, () => { renderSpots(); if (activeTab === 'map') renderMapSpots(); });
-  initMultiDropdown(regionFilterEl, () => { renderSpots(); if (activeTab === 'map') renderMapSpots(); });
+  initMultiDropdown(bandFilterEl, () => { renderSpots(); if (activeTab === 'map') renderMapSpots(); sendFilters(); });
+  initMultiDropdown(modeFilterEl, () => { renderSpots(); if (activeTab === 'map') renderMapSpots(); sendFilters(); });
+  initMultiDropdown(regionFilterEl, () => { renderSpots(); if (activeTab === 'map') renderMapSpots(); sendFilters(); });
 
   // --- Spots dropdown ---
   spotsDropdown.querySelector('.rc-dropdown-btn').addEventListener('click', (e) => {
@@ -1043,10 +1047,12 @@
       showNewOnly = cb.checked;
       renderSpots();
       if (activeTab === 'map') renderMapSpots();
+      sendFilters();
     } else if (cb.id === 'rc-hide-worked') {
       hideWorked = cb.checked;
       renderSpots();
       if (activeTab === 'map') renderMapSpots();
+      sendFilters();
     }
   });
 
@@ -1055,11 +1061,72 @@
     document.querySelectorAll('.rc-dropdown.open').forEach(d => d.classList.remove('open'));
   });
 
+  // --- Filter persistence (sync to desktop settings.json) ---
+  function getFilterValues(container) {
+    const allCb = container.querySelector('input[value="all"]');
+    if (allCb && allCb.checked) return null;
+    const checked = [...container.querySelectorAll('input:not([value="all"]):checked')];
+    if (checked.length === 0) return null;
+    return checked.map(cb => cb.value);
+  }
+  function sendFilters() {
+    if (!ws || ws.readyState !== WebSocket.OPEN) return;
+    ws.send(JSON.stringify({
+      type: 'set-echo-filters',
+      filters: {
+        bands: getFilterValues(bandFilterEl),
+        modes: getFilterValues(modeFilterEl),
+        regions: getFilterValues(regionFilterEl),
+        sort: spotSort,
+        newOnly: showNewOnly,
+        hideWorked: hideWorked,
+      }
+    }));
+  }
+  function applyFilters(f) {
+    if (!f) return;
+    [bandFilterEl, modeFilterEl, regionFilterEl].forEach((el, i) => {
+      const vals = [f.bands, f.modes, f.regions][i];
+      const allCb = el.querySelector('input[value="all"]');
+      const itemCbs = [...el.querySelectorAll('input:not([value="all"])')];
+      if (!vals) {
+        allCb.checked = true;
+        itemCbs.forEach(cb => { cb.checked = false; });
+      } else {
+        const set = new Set(vals);
+        allCb.checked = false;
+        itemCbs.forEach(cb => { cb.checked = set.has(cb.value); });
+      }
+      // Update dropdown text
+      const textEl = el.querySelector('.rc-dd-text');
+      if (textEl) {
+        const checked = itemCbs.filter(cb => cb.checked);
+        if (allCb.checked || checked.length === 0) { textEl.textContent = 'All'; }
+        else if (checked.length <= 2) { textEl.textContent = checked.map(cb => cb.value).join(', '); }
+        else { textEl.textContent = checked.length + ' sel'; }
+      }
+    });
+    if (f.sort) { spotSort = f.sort; sortSelect.value = f.sort; }
+    if (f.newOnly != null) {
+      showNewOnly = f.newOnly;
+      const cb = document.getElementById('rc-new-only');
+      if (cb) cb.checked = f.newOnly;
+    }
+    if (f.hideWorked != null) {
+      hideWorked = f.hideWorked;
+      const cb = document.getElementById('rc-hide-worked');
+      if (cb) cb.checked = f.hideWorked;
+    }
+    renderSpots();
+    if (activeTab === 'map') renderMapSpots();
+  }
+
   // --- Sort ---
   sortSelect.addEventListener('change', () => {
     spotSort = sortSelect.value;
     renderSpots();
     if (activeTab === 'map') renderMapSpots();
+    sendFilters();
   });
 
   // --- Frequency direct input (legacy — kept for keyboard fallback) ---
