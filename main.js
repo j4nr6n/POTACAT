@@ -1509,7 +1509,7 @@ function advanceJtcatQso(q, results, setTxMsg, onDone) {
       if (!m) return;
       q.call = m[1]; q.grid = m[2];
       const dbRounded = Math.round(reply.db);
-      const rpt = dbRounded >= 0 ? '+' + String(dbRounded).padStart(2, '0') : String(dbRounded).padStart(3, '0');
+      const rpt = dbRounded >= 0 ? '+' + String(dbRounded).padStart(2, '0') : '-' + String(Math.abs(dbRounded)).padStart(2, '0');
       q.sentReport = rpt;
       q.txMsg = q.call + ' ' + myCall + ' ' + rpt;
       q.phase = 'cq-report';
@@ -1577,7 +1577,7 @@ function advanceJtcatQso(q, results, setTxMsg, onDone) {
       if (!rptM) return;
       q.report = rptM[1];
       const dbRounded = Math.round(resp.db);
-      const ourRpt = dbRounded >= 0 ? '+' + String(dbRounded).padStart(2, '0') : String(dbRounded).padStart(3, '0');
+      const ourRpt = dbRounded >= 0 ? '+' + String(dbRounded).padStart(2, '0') : '-' + String(Math.abs(dbRounded)).padStart(2, '0');
       q.sentReport = ourRpt;
       if (text.indexOf('R' + rptM[1]) >= 0 || text.indexOf('R+') >= 0 || text.indexOf('R-') >= 0) {
         // They sent R+report — both reports exchanged. Send RR73, log now.
@@ -5374,7 +5374,7 @@ app.whenReady().then(() => {
     } else if (data.report) {
       // They sent a signal report — pick up at R+report phase
       const snr = data.snr != null ? data.snr : 0;
-      const ourRpt = snr >= 0 ? '+' + String(Math.round(snr)).padStart(2, '0') : String(Math.round(snr)).padStart(3, '0');
+      const ourRpt = snr >= 0 ? '+' + String(Math.round(snr)).padStart(2, '0') : '-' + String(Math.abs(Math.round(snr))).padStart(2, '0');
       txMsg = data.call + ' ' + myCall + ' R' + ourRpt;
       phase = 'r+report';
       popoutJtcatQso = { mode: 'reply', call: data.call, grid: data.grid, phase, txMsg, report: data.report, sentReport: ourRpt, myCall, myGrid, txRetries: 0 };
