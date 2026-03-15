@@ -1308,9 +1308,105 @@ dialog {
 }
 
 #settings-dialog {
-  max-width: 420px;
-  width: 420px;
+  max-width: 460px;
+  width: 460px;
   overflow-x: hidden;
+  max-height: 85vh;
+}
+
+#settings-dialog[open] {
+  display: flex;
+  flex-direction: column;
+}
+
+/* Settings tab bar */
+.settings-tab-bar {
+  margin-bottom: 8px;
+  flex-shrink: 0;
+}
+
+.settings-tabs-row {
+  display: flex;
+  gap: 0;
+  border-bottom: 2px solid var(--border-secondary);
+}
+
+.settings-tab {
+  flex: 1;
+  padding: 6px 2px;
+  font-size: 11px;
+  font-weight: 500;
+  border: none;
+  background: transparent;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  white-space: nowrap;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -2px;
+  transition: color 0.15s, border-color 0.15s;
+}
+
+.settings-tab:hover {
+  color: var(--text-secondary);
+}
+
+.settings-tab.active {
+  color: var(--accent-blue);
+  border-bottom-color: var(--accent-blue);
+  background: color-mix(in srgb, var(--accent-blue) 8%, transparent);
+}
+
+.settings-tab.has-match {
+  color: var(--accent-green);
+}
+
+.settings-search {
+  display: block;
+  width: 100%;
+  margin-top: 6px;
+  padding: 5px 8px;
+  font-size: 12px;
+  border: 1px solid var(--border-secondary);
+  border-radius: 4px;
+  background: var(--bg-input);
+  color: var(--text-primary);
+}
+
+.settings-search::placeholder {
+  color: var(--text-tertiary);
+}
+
+/* Scrollable settings content area */
+.settings-scroll-area {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  min-height: 100px;
+}
+
+/* Tab-based visibility: hide fieldsets not on the active tab */
+#settings-dialog.tabbed .settings-scroll-area > fieldset {
+  display: none;
+}
+
+#settings-dialog.tabbed .settings-scroll-area > fieldset.tab-visible {
+  display: block;
+}
+
+/* Search mode: highlight matches */
+#settings-dialog.searching .settings-scroll-area > fieldset {
+  display: none;
+}
+
+#settings-dialog.searching .settings-scroll-area > fieldset.search-match {
+  display: block;
+}
+
+.settings-no-results {
+  text-align: center;
+  color: var(--text-tertiary);
+  padding: 24px 0;
+  font-size: 13px;
 }
 
 dialog::backdrop {
@@ -1320,6 +1416,10 @@ dialog::backdrop {
 dialog h3 {
   margin-bottom: 16px;
   color: var(--accent-red);
+}
+
+#settings-dialog > h3 {
+  flex-shrink: 0;
 }
 
 dialog label {
@@ -1341,6 +1441,10 @@ dialog input, dialog select {
   gap: 8px;
   justify-content: flex-end;
   margin-top: 16px;
+}
+
+#settings-dialog > .dialog-buttons {
+  flex-shrink: 0;
 }
 
 /* CAT dialog */
@@ -1508,6 +1612,7 @@ dialog input, dialog select {
   gap: 8px;
   margin-bottom: 10px;
   flex-wrap: wrap;
+  flex-shrink: 0;
 }
 
 .conn-pill {
@@ -1584,6 +1689,7 @@ dialog input, dialog select {
   margin-top: 16px;
   font-size: 12px;
   color: var(--text-tertiary);
+  flex-shrink: 0;
 }
 
 .settings-version {
@@ -1627,15 +1733,15 @@ dialog input, dialog select {
 /* Pi access easter egg */
 .pi-access {
   position: absolute;
-  bottom: 0;
-  right: 0;
-  font-size: 11px;
-  color: var(--text-dimmer);
+  bottom: 2px;
+  right: -8px;
+  font-size: 12px;
+  color: var(--text-tertiary);
   cursor: default;
   user-select: none;
-  opacity: 0.4;
+  opacity: 0.7;
   line-height: 1;
-  padding: 2px 4px;
+  padding: 2px 6px;
 }
 
 .pi-overlay {

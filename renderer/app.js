@@ -599,7 +599,14 @@ function positionCatPopover() {
   const anchor = _catPopoverAnchor || catStatusEl;
   const rect = anchor.getBoundingClientRect();
   catPopover.style.top = (rect.bottom + 4) + 'px';
-  catPopover.style.left = rect.left + 'px';
+  // Align right edge to anchor right, clamped to viewport
+  catPopover.style.left = '';
+  catPopover.style.right = '';
+  const popW = catPopover.offsetWidth || 220;
+  let left = rect.right - popW;
+  if (left < 0) left = 0;
+  if (left + popW > window.innerWidth) left = window.innerWidth - popW;
+  catPopover.style.left = left + 'px';
 }
 
 async function openCatPopover(anchor) {
@@ -2613,7 +2620,7 @@ async function populateRigAudioDevices(restoreIn, restoreOut) {
 async function updateRemoteAudioSummary(audioInId, audioOutId) {
   if (!remoteAudioSummary) return;
   if (!audioInId && !audioOutId) {
-    remoteAudioSummary.textContent = 'not configured \u2014 set in My Rigs';
+    remoteAudioSummary.textContent = 'not configured';
     return;
   }
   try {
@@ -2622,8 +2629,17 @@ async function updateRemoteAudioSummary(audioInId, audioOutId) {
     const outLabel = audioOutId ? (devices.find(d => d.deviceId === audioOutId)?.label || audioOutId.slice(0, 16)) : 'default';
     remoteAudioSummary.textContent = `${inLabel} / ${outLabel}`;
   } catch {
-    remoteAudioSummary.textContent = audioInId || audioOutId ? 'configured' : 'not configured \u2014 set in My Rigs';
+    remoteAudioSummary.textContent = audioInId || audioOutId ? 'configured' : 'not configured';
   }
+}
+
+// "Edit in Radio tab" link in ECHOCAT audio display
+const remoteAudioEditLink = document.getElementById('remote-audio-edit-link');
+if (remoteAudioEditLink) {
+  remoteAudioEditLink.addEventListener('click', (e) => {
+    e.preventDefault();
+    switchSettingsTab('radio');
+  });
 }
 
 async function populateRemoteURLs() {
@@ -6154,8 +6170,93 @@ echoCatCopy.addEventListener('click', async () => {
   } catch {}
 });
 
+// Settings tabs
+const settingsTabBar = document.querySelector('.settings-tabs-row');
+const settingsSearch = document.getElementById('settings-search');
+const settingsScrollArea = document.querySelector('.settings-scroll-area');
+
+function switchSettingsTab(tabName) {
+  if (!settingsTabBar) return;
+  // Update active tab button
+  settingsTabBar.querySelectorAll('.settings-tab').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.tab === tabName);
+  });
+  // Show/hide fieldsets
+  settingsScrollArea.querySelectorAll('fieldset[data-settings-tab]').forEach(fs => {
+    fs.classList.toggle('tab-visible', fs.dataset.settingsTab === tabName);
+  });
+  settingsDialog.classList.add('tabbed');
+  settingsDialog.classList.remove('searching');
+  // Save active tab
+  try { localStorage.setItem('settings-active-tab', tabName); } catch {}
+  // Scroll to top of the new tab
+  settingsScrollArea.scrollTop = 0;
+}
+
+if (settingsTabBar) {
+  settingsTabBar.addEventListener('click', (e) => {
+    const btn = e.target.closest('.settings-tab');
+    if (!btn) return;
+    settingsSearch.value = '';
+    settingsTabBar.querySelectorAll('.settings-tab').forEach(b => b.classList.remove('has-match'));
+    switchSettingsTab(btn.dataset.tab);
+  });
+}
+
+if (settingsSearch) {
+  settingsSearch.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+      if (settingsSearch.value) {
+        e.stopPropagation(); // Don't close the dialog
+        settingsSearch.value = '';
+        settingsSearch.dispatchEvent(new Event('input'));
+      }
+    }
+  });
+  settingsSearch.addEventListener('input', () => {
+    const q = settingsSearch.value.trim().toLowerCase();
+    if (!q) {
+      // Restore tab view
+      settingsDialog.classList.remove('searching');
+      const oldMsg = settingsScrollArea.querySelector('.settings-no-results');
+      if (oldMsg) oldMsg.remove();
+      const activeTab = settingsTabBar.querySelector('.settings-tab.active');
+      if (activeTab) switchSettingsTab(activeTab.dataset.tab);
+      settingsTabBar.querySelectorAll('.settings-tab').forEach(b => b.classList.remove('has-match'));
+      return;
+    }
+    settingsDialog.classList.remove('tabbed');
+    settingsDialog.classList.add('searching');
+    // Remove old no-results message
+    const oldMsg = settingsScrollArea.querySelector('.settings-no-results');
+    if (oldMsg) oldMsg.remove();
+    // Check each fieldset for matches
+    const tabMatches = {};
+    let anyMatch = false;
+    settingsScrollArea.querySelectorAll('fieldset[data-settings-tab]').forEach(fs => {
+      const text = fs.textContent.toLowerCase();
+      const match = text.includes(q);
+      fs.classList.toggle('search-match', match);
+      if (match) { tabMatches[fs.dataset.settingsTab] = true; anyMatch = true; }
+    });
+    // Show which tabs have matches
+    settingsTabBar.querySelectorAll('.settings-tab').forEach(btn => {
+      btn.classList.toggle('has-match', !!tabMatches[btn.dataset.tab]);
+    });
+    // No results message
+    if (!anyMatch) {
+      const msg = document.createElement('div');
+      msg.className = 'settings-no-results';
+      msg.textContent = `No settings matching "${settingsSearch.value.trim()}"`;
+      settingsScrollArea.appendChild(msg);
+    }
+  });
+}
+
 // Settings dialog
-async function openSettingsDialog() {
+let _openSettingsTab = null;
+async function openSettingsDialog(tab) {
+  if (tab) _openSettingsTab = tab;
   const s = await window.api.getSettings();
   setGrid.value = s.grid || '';
   setDistUnit.value = s.distUnit || 'mi';
@@ -6382,6 +6483,11 @@ async function openSettingsDialog() {
   if (modeRadio) modeRadio.checked = true;
   // Pi access (The Net easter egg) — unlock gated features if previously authorized
   if (typeof applyPiAccess === 'function') applyPiAccess(!!s.piAccess);
+  // Restore settings tab (or navigate to specified tab)
+  if (settingsSearch) settingsSearch.value = '';
+  const targetTab = _openSettingsTab || localStorage.getItem('settings-active-tab') || 'station';
+  _openSettingsTab = null;
+  switchSettingsTab(targetTab);
   settingsDialog.showModal();
 }
 
@@ -8752,7 +8858,12 @@ function positionRigPopover() {
   const bar = rigPanelBtn.closest('.status-bar');
   const barRect = bar.getBoundingClientRect();
   rigPopover.style.top = (rect.bottom - barRect.top + 4) + 'px';
-  rigPopover.style.left = (rect.left - barRect.left) + 'px';
+  // Align right edge to anchor right, clamped to parent
+  const popW = rigPopover.offsetWidth || 280;
+  let left = rect.right - barRect.left - popW;
+  if (left < 0) left = 0;
+  if (left + popW > barRect.width) left = barRect.width - popW;
+  rigPopover.style.left = left + 'px';
 }
 
 function openRigPopover() {

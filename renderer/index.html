@@ -702,7 +702,7 @@
 
   <!-- Settings dialog -->
   <dialog id="settings-dialog">
-    <h3>Settings <span style="float:right;font-size:11px;font-weight:normal;color:#666;margin-top:4px;">ESC to close without saving</span></h3>
+    <h3 style="display:flex;justify-content:space-between;align-items:baseline;">Settings <span style="font-size:11px;font-weight:normal;color:#666;">ESC to close</span></h3>
     <!-- 0. Connection Status (only visible when sources are enabled) -->
     <div id="settings-conn-status" class="settings-conn-bar hidden">
       <span id="conn-cluster" class="conn-pill hidden"><span class="conn-dot"></span> DX Cluster</span>
@@ -710,8 +710,22 @@
       <span id="conn-pskr" class="conn-pill hidden"><span class="conn-dot"></span> FreeDV</span>
       <span id="conn-remote" class="conn-pill hidden"><span class="conn-dot"></span> Echo CAT</span>
     </div>
+    <!-- Settings tab bar -->
+    <div class="settings-tab-bar">
+      <div class="settings-tabs-row">
+        <button type="button" class="settings-tab active" data-tab="station">Station</button>
+        <button type="button" class="settings-tab" data-tab="radio">Radio</button>
+        <button type="button" class="settings-tab" data-tab="spots">Spots</button>
+        <button type="button" class="settings-tab" data-tab="tuning">Tuning</button>
+        <button type="button" class="settings-tab" data-tab="logging">Logging</button>
+        <button type="button" class="settings-tab" data-tab="network">ECHOCAT</button>
+        <button type="button" class="settings-tab" data-tab="display">Display</button>
+      </div>
+      <input type="text" id="settings-search" class="settings-search" placeholder="Search settings...">
+    </div>
+    <div class="settings-scroll-area">
     <!-- 0.5 App Mode -->
-    <fieldset class="source-toggles">
+    <fieldset class="source-toggles" data-settings-tab="station">
       <legend>App Mode</legend>
       <div style="display:flex;gap:16px;align-items:center;">
         <label class="radio-label"><input type="radio" name="set-app-mode" value="hunter" checked> Hunter <span style="color:#888;font-size:12px;">(spot browser)</span></label>
@@ -720,7 +734,7 @@
       <span class="help-text" style="display:block;margin-top:4px;">Hunter mode shows live spots. Activator mode provides a rapid logging interface for park activations.</span>
     </fieldset>
     <!-- 1. Station -->
-    <fieldset class="source-toggles collapsible">
+    <fieldset class="source-toggles collapsible" data-settings-tab="station">
       <legend class="collapsible-legend" data-target="station-body">Station <span class="collapse-arrow">&#9662;</span></legend>
       <div id="station-body">
       <label>My Callsign: <input type="text" id="set-my-callsign" maxlength="10" placeholder="WB6ACU"></label>
@@ -776,7 +790,7 @@
       </div>
     </fieldset>
     <!-- 2. Radio -->
-    <fieldset class="radio-config">
+    <fieldset class="radio-config" data-settings-tab="radio">
       <legend>Radio</legend>
       <div id="my-rigs-list"></div>
       <button type="button" id="rig-add-btn" class="rig-action-btn">+ Add Rig</button>
@@ -929,7 +943,7 @@
       </div>
     </fieldset>
     <!-- 3. Spot Sources -->
-    <fieldset class="source-toggles">
+    <fieldset class="source-toggles" data-settings-tab="spots">
       <legend>Spot Sources</legend>
       <label class="checkbox-label"><input type="checkbox" id="set-enable-pota" checked> Enable POTA</label>
       <div id="pota-parks-picker" style="margin-top:6px;margin-left:12px;margin-bottom:8px;">
@@ -987,7 +1001,7 @@
       </div>
     </fieldset>
     <!-- 4. Spot Filters (merged Spots + Watchlist) -->
-    <fieldset class="source-toggles">
+    <fieldset class="source-toggles" data-settings-tab="spots">
       <legend>Spot Filters</legend>
       <label>Max Spot Age (minutes):
         <input type="number" id="set-max-age" min="1" max="120" value="5">
@@ -1011,7 +1025,7 @@
       </label>
     </fieldset>
     <!-- 5. Tuning (trimmed — PstRotator moved to Antenna) -->
-    <fieldset class="source-toggles">
+    <fieldset class="source-toggles" data-settings-tab="tuning">
       <legend>Tuning</legend>
       <label>Scan Dwell Time (seconds):
         <input type="number" id="set-scan-dwell" min="2" max="30" value="7">
@@ -1037,7 +1051,7 @@
       <span class="help-text" style="margin-left:12px;margin-bottom:6px;display:block;">Play a click when the radio confirms it has changed frequency</span>
     </fieldset>
     <!-- 6. Antenna (beam heading + PstRotator) -->
-    <fieldset class="source-toggles">
+    <fieldset class="source-toggles" data-settings-tab="tuning">
       <legend>Antenna</legend>
       <label class="checkbox-label"><input type="checkbox" id="set-show-bearing"> Show Beam Heading</label>
       <span class="help-text" style="margin-left:12px;display:block;">Compass bearing from your QTH to each spot</span>
@@ -1076,7 +1090,7 @@
       </div>
     </fieldset>
     <!-- 7. Logging -->
-    <fieldset class="source-toggles">
+    <fieldset class="source-toggles" data-settings-tab="logging">
       <legend>Logging</legend>
       <label class="checkbox-label"><input type="checkbox" id="set-enable-logging"> Enable QSO Logging</label>
       <label class="checkbox-label" style="margin-left:12px;"><input type="checkbox" id="set-enable-banner-logger"> Bottom Banner Logger</label>
@@ -1153,7 +1167,7 @@
       </div>
     </fieldset>
     <!-- Events & Awards -->
-    <fieldset class="source-toggles">
+    <fieldset class="source-toggles" data-settings-tab="logging">
       <legend>Events &amp; Awards</legend>
       <div id="settings-events-list" style="font-size:12px;color:var(--text-secondary);padding:4px 0;">No active events</div>
       <label class="checkbox-label"><input type="checkbox" id="set-enable-dxcc"> DXCC Tracker</label>
@@ -1161,7 +1175,7 @@
     </fieldset>
 
     <!-- Net Reminders -->
-    <fieldset class="source-toggles">
+    <fieldset class="source-toggles" data-settings-tab="spots">
       <legend>Net Reminders</legend>
       <span class="help-text" style="display:block;margin-bottom:6px;">Schedule recurring nets to appear as pinned spots. Tap to tune your radio at net time.</span>
       <div id="net-reminder-list"></div>
@@ -1295,7 +1309,7 @@
     </fieldset>
 
     <!-- 8. Display (trimmed — bearing moved to Antenna, SmartSDR absorbed) -->
-    <fieldset class="source-toggles">
+    <fieldset class="source-toggles" data-settings-tab="display">
       <legend>Display</legend>
       <label class="switch-label">
         <span>Dark Mode</span>
@@ -1322,6 +1336,10 @@
           </select>
         </label>
       </div>
+    </fieldset>
+    <!-- Panadapter Spots -->
+    <fieldset class="source-toggles" data-settings-tab="spots">
+      <legend>Panadapter Spots</legend>
       <label class="checkbox-label">
         <input type="checkbox" id="set-smartsdr-spots"> Push spots to SmartSDR panadapter
       </label>
@@ -1353,7 +1371,7 @@
       </div>
     </fieldset>
     <!-- 9. CW Keyer -->
-    <fieldset class="source-toggles collapsible">
+    <fieldset class="source-toggles collapsible" data-settings-tab="station">
       <legend>CW Keyer</legend>
       <label class="checkbox-label"><input type="checkbox" id="set-enable-cw-keyer"> CW Keyer (MIDI paddle)</label>
       <div id="cw-keyer-config" class="hidden" style="margin-top:6px;margin-left:12px;">
@@ -1396,9 +1414,9 @@
       </div>
     </fieldset>
     <!-- 10. ECHOCAT -->
-    <fieldset class="source-toggles">
+    <fieldset class="source-toggles" data-settings-tab="network">
       <legend>ECHOCAT</legend>
-      <label class="checkbox-label"><input type="checkbox" id="set-enable-remote"> Enable ECHOCAT (phone browser over Tailscale)</label>
+      <label class="checkbox-label"><input type="checkbox" id="set-enable-remote"> Enable ECHOCAT (Remote Radio over VPN)</label>
       <div id="remote-config" class="radio-sub hidden" style="margin-top:6px;margin-left:12px;">
         <label>Port:
           <input type="number" id="set-remote-port" placeholder="7300" min="1024" max="65535" value="7300" style="width:80px;">
@@ -1410,9 +1428,10 @@
           </label>
           <button type="button" id="remote-regen-token" style="padding:2px 8px;">Random</button>
         </div>
-        <span class="help-text">Tailscale already secures the connection — token is optional</span>
+        <span class="help-text">Your VPN may be plenty secure. Add a remote log-in token if you want added security.</span>
         <div id="remote-audio-display" style="margin-top:8px;font-size:12px;color:#aaa;">
-          Audio: <span id="remote-audio-summary">not configured — set in My Rigs</span>
+          Audio: <span id="remote-audio-summary">not configured</span>
+          <a href="#" id="remote-audio-edit-link" style="margin-left:8px;font-size:11px;color:#4fc3f7;cursor:pointer;">Edit in Radio tab</a>
         </div>
         <div style="margin-top:4px;">
           <label>PTT Safety Timeout (seconds):
@@ -1430,7 +1449,7 @@
           </div>
         </div>
         <div id="remote-url-display" style="margin-top:8px;font-family:monospace;font-size:12px;"></div>
-        <span class="help-text">To use ECHOCAT securely outside your home network, install <a href="https://tailscale.com" target="_blank" style="color:#4fc3f7;">Tailscale</a> on both your shack computer and phone. Audio, tuning, and PTT are all encrypted over the Tailscale VPN.</span>
+        <span class="help-text">To use ECHOCAT securely outside your home network, install a VPN such as <a href="https://tailscale.com" target="_blank" style="color:#4fc3f7;">Tailscale</a> (free) on both your shack computer and phone. Audio, tuning, and PTT are all encrypted over the VPN tunnel.</span>
         <!-- Club Station Mode -->
         <div style="margin-top:12px;border-top:1px solid #333;padding-top:10px;">
           <label class="checkbox-label"><input type="checkbox" id="set-club-mode"> Club Station Mode</label>
@@ -1452,7 +1471,7 @@
       </div>
     </fieldset>
     <!-- 11. About (merged Privacy + Diagnostics) -->
-    <fieldset class="source-toggles">
+    <fieldset class="source-toggles" data-settings-tab="display">
       <legend>About</legend>
       <label class="checkbox-label"><input type="checkbox" id="set-disable-auto-update"> Disable automatic updates</label>
       <span class="help-text" style="margin-left:12px;margin-bottom:6px;display:block;">When checked, POTACAT will not check for new versions on startup.</span>
@@ -1463,6 +1482,7 @@
       <label class="checkbox-label"><input type="checkbox" id="set-light-icon"> Use light app icon</label>
       <span class="help-text" style="margin-left:12px;margin-bottom:6px;display:block;">Switches the taskbar and title bar icon to a light variant — easier to see on dark desktop panels</span>
     </fieldset>
+    </div><!-- /.settings-scroll-area -->
     <div class="dialog-buttons">
       <button id="settings-save">Save</button>
       <button id="settings-cancel">Cancel</button>
