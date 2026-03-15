@@ -1344,7 +1344,7 @@ buildBandButtons();
 function getBandQsyFreq(band) {
   const mode = (radioMode || '').toUpperCase();
   if (mode === 'CW') return BAND_QSY_FREQS.cw[band];
-  if (['FT8', 'FT4', 'FT2', 'RTTY', 'JT65', 'JT9', 'WSPR', 'DIGI'].includes(mode)) return BAND_QSY_FREQS.digi[band];
+  if (['FT8', 'FT4', 'FT2', 'RTTY', 'JT65', 'JT9', 'WSPR', 'DIGI', 'DIGU', 'DIGL', 'PKTUSB', 'PKTLSB'].includes(mode)) return BAND_QSY_FREQS.digi[band];
   return BAND_QSY_FREQS.ssb[band];
 }
 
@@ -2720,10 +2720,12 @@ document.addEventListener('click', () => {
 });
 
 // --- Filtering ---
+const DIGI_MODES = new Set(['FT8', 'FT4', 'FT2', 'RTTY', 'FREEDV', 'JT65', 'JT9', 'PSK31', 'OLIVIA', 'MFSK', 'DATA', 'DIGU', 'DIGL']);
 function modeMatches(spotMode, selectedModes) {
   if (!selectedModes) return true;
   if (selectedModes.has(spotMode)) return true;
   if (selectedModes.has('SSB') && (spotMode === 'USB' || spotMode === 'LSB')) return true;
+  if (selectedModes.has('DIGI') && DIGI_MODES.has(spotMode)) return true;
   return false;
 }
 
@@ -2738,6 +2740,8 @@ function radioModeToFilter(catMode) {
   if (m === 'FT8') return 'FT8';
   if (m === 'FT4') return 'FT4';
   if (m === 'FREEDV') return 'FREEDV';
+  // DATA modes (DIGU/PKTUSB/DIGL/PKTLSB) → show all digital spots
+  if (m === 'DIGU' || m === 'PKTUSB' || m === 'DIGL' || m === 'PKTLSB') return 'DIGI';
   return null;
 }
 
