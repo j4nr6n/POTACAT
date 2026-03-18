@@ -5867,6 +5867,20 @@ logSaveBtn.addEventListener('click', async () => {
     const displayCalls = callsigns.join(', ');
     if (lastResult && lastResult.success) {
       logDialog.close();
+      // Advance selection to the next spot by frequency so the highlight
+      // doesn't disappear when "hide worked" removes the logged station
+      if (lastTunedSpot && hideWorked) {
+        const freq = parseFloat(lastTunedSpot.frequency);
+        const filtered = getFiltered().filter(s =>
+          s.callsign !== lastTunedSpot.callsign || s.frequency !== lastTunedSpot.frequency
+        );
+        if (filtered.length > 0) {
+          // Find nearest spot by frequency (prefer next higher, then lower)
+          const sorted = [...filtered].sort((a, b) => parseFloat(a.frequency) - parseFloat(b.frequency));
+          const next = sorted.find(s => parseFloat(s.frequency) >= freq) || sorted[sorted.length - 1];
+          if (next) lastTunedSpot = next;
+        }
+      }
       if (lastResult.logbookError) {
         const friendly = lastResult.logbookError.includes('ECONNREFUSED')
           ? 'Could not reach logbook — is it running and configured correctly?'
