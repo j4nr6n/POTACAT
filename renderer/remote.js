@@ -1743,6 +1743,18 @@
     }
   });
 
+  document.getElementById('rc-power-on').addEventListener('click', () => {
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify({ type: 'rig-control', action: 'power-on' }));
+    }
+  });
+
+  document.getElementById('rc-power-off').addEventListener('click', () => {
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify({ type: 'rig-control', action: 'power-off' }));
+    }
+  });
+
   rcVfoA.addEventListener('click', () => {
     if (txState) return;
     if (ws && ws.readyState === WebSocket.OPEN) {
