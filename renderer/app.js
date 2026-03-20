@@ -15,7 +15,7 @@ let enableSplitView = true; // allow Table+Map simultaneously
 
 // User preferences (loaded from settings)
 let distUnit = 'mi';    // 'mi' or 'km'
-let watchlist = new Set(); // uppercase callsigns
+let watchlist = []; // parsed watchlist rules: [{ callsign, band, mode }]
 let maxAgeMin = 5;       // max spot age in minutes
 let sotaMaxAgeMin = 30;  // SOTA max spot age in minutes
 let scanDwell = 7;       // seconds per frequency during scan
@@ -807,9 +807,44 @@ document.addEventListener('keydown', (e) => {
 });
 
 // --- Load preferences from settings ---
+// Parse watchlist string into array of { callsign, band, mode } rules.
+// Format: "K3SBP, K4SWL:20m, KI6NAZ:CW, W1AW:40m:SSB"
+const WATCH_BANDS = new Set(['160m','80m','60m','40m','30m','20m','17m','15m','12m','10m','6m','2m','70cm']);
 function parseWatchlist(str) {
-  if (!str) return new Set();
-  return new Set(str.split(',').map((c) => c.trim().toUpperCase()).filter(Boolean));
+  if (!str) return [];
+  const rules = [];
+  for (const entry of str.split(',')) {
+    const parts = entry.trim().toUpperCase().split(':').map(p => p.trim());
+    if (!parts[0]) continue;
+    const rule = { callsign: parts[0], band: null, mode: null };
+    for (let i = 1; i < parts.length; i++) {
+      if (WATCH_BANDS.has(parts[i].toLowerCase())) rule.band = parts[i].toLowerCase();
+      else if (parts[i]) rule.mode = parts[i];
+    }
+    rules.push(rule);
+  }
+  return rules;
+}
+
+function watchlistMatch(rules, callsign, band, mode) {
+  const cs = (callsign || '').toUpperCase();
+  const b = (band || '').toLowerCase();
+  const m = (mode || '').toUpperCase();
+  for (const r of rules) {
+    if (r.callsign !== cs) continue;
+    if (r.band && r.band !== b) continue;
+    if (r.mode && r.mode !== m) continue;
+    return true;
+  }
+  return false;
+}
+
+function watchlistHasCallsign(rules, callsign) {
+  const cs = (callsign || '').toUpperCase();
+  for (const r of rules) {
+    if (r.callsign === cs) return true;
+  }
+  return false;
 }
 
 function applyTheme(light) {
@@ -3112,7 +3147,7 @@ function getFiltered() {
       (s.source === 'dxc' && !enableCluster) ||
       (s.source === 'rbn' && !enableRbn) ||
       (s.source === 'pskr' && !enablePskr);
-    const isWatched = watchlist.has(s.callsign.toUpperCase());
+    const isWatched = watchlistMatch(watchlist, s.callsign, s.band, s.mode);
 
     if (sourceOff) {
       if (!isWatched || spotAgeSecs(s.spotTime) > 300) return false;
@@ -4102,7 +4137,7 @@ function updateMapMarkers(filtered) {
     if (s.lat == null || s.lon == null) continue;
 
     const distStr = s.distance != null ? formatDistance(s.distance) + ' ' + unit : '';
-    const watched = watchlist.has(s.callsign.toUpperCase());
+    const watched = watchlistMatch(watchlist, s.callsign, s.band, s.mode);
 
     const sourceLabel = (s.source || 'pota').toUpperCase();
     const sourceColor = SOURCE_COLORS_ACTIVE[s.source] || SOURCE_COLORS_ACTIVE.pota;
@@ -5086,7 +5121,7 @@ function enrichSpotsForPopout(filtered) {
     expeditionEntity: (expeditionMeta.get(s.callsign.toUpperCase()) || {}).entity || '',
     isNewPark: workedParksSet.size > 0 && (s.source === 'pota' || s.source === 'wwff') && s.reference && !workedParksSet.has(s.reference),
     isOop: isOutOfPrivilege(parseFloat(s.frequency), s.mode, licenseClass),
-    isWatched: watchlist.has(s.callsign.toUpperCase()),
+    isWatched: watchlistMatch(watchlist, s.callsign, s.band, s.mode),
     opName: qrzDisplayName(qrzData.get(s.callsign.toUpperCase().split('/')[0])),
   }));
 }
@@ -5369,7 +5404,7 @@ function render() {
       cellMap.set('log', logTd);
 
       // Callsign cell — clickable link to QRZ
-      const isWatched = watchlist.has(s.callsign.toUpperCase());
+      const isWatched = watchlistMatch(watchlist, s.callsign, s.band, s.mode);
       const callTd = document.createElement('td');
       callTd.className = 'callsign-cell';
       callTd.setAttribute('data-col', 'callsign');
@@ -9948,6 +9983,10 @@ document.getElementById('bio-link').addEventListener('click', (e) => {
 document.getElementById('coffee-link').addEventListener('click', (e) => {
   e.preventDefault();
   window.api.openExternal('https://buymeacoffee.com/potacat');
+});
+document.getElementById('docs-link').addEventListener('click', (e) => {
+  e.preventDefault();
+  window.api.openExternal('https://docs.potacat.com/');
 });
 document.getElementById('discord-link').addEventListener('click', (e) => {
   e.preventDefault();

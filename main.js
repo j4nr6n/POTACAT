@@ -189,14 +189,45 @@ function getRigCapabilities(rigType) {
 // --- Watchlist notifications ---
 const recentNotifications = new Map(); // callsign → timestamp for dedup (5-min window)
 
+// Parse watchlist string into array of { callsign, band, mode } rules.
+// Format: "K3SBP, K4SWL:20m, KI6NAZ:CW, W1AW:40m:SSB"
+// Band/mode qualifiers are optional — omitted means match any.
+const WATCH_BANDS = new Set(['160m','80m','60m','40m','30m','20m','17m','15m','12m','10m','6m','2m','70cm']);
 function parseWatchlist(str) {
-  if (!str) return new Set();
-  const set = new Set();
-  for (const cs of str.split(',')) {
-    const trimmed = cs.trim().toUpperCase();
-    if (trimmed) set.add(trimmed);
+  if (!str) return [];
+  const rules = [];
+  for (const entry of str.split(',')) {
+    const parts = entry.trim().toUpperCase().split(':').map(p => p.trim());
+    if (!parts[0]) continue;
+    const rule = { callsign: parts[0], band: null, mode: null };
+    for (let i = 1; i < parts.length; i++) {
+      if (WATCH_BANDS.has(parts[i].toLowerCase())) rule.band = parts[i].toLowerCase();
+      else if (parts[i]) rule.mode = parts[i];
+    }
+    rules.push(rule);
   }
-  return set;
+  return rules;
+}
+
+function watchlistMatch(rules, callsign, band, mode) {
+  const cs = (callsign || '').toUpperCase();
+  const b = (band || '').toLowerCase();
+  const m = (mode || '').toUpperCase();
+  for (const r of rules) {
+    if (r.callsign !== cs) continue;
+    if (r.band && r.band !== b) continue;
+    if (r.mode && r.mode !== m) continue;
+    return true;
+  }
+  return false;
+}
+
+function watchlistHasCallsign(rules, callsign) {
+  const cs = (callsign || '').toUpperCase();
+  for (const r of rules) {
+    if (r.callsign === cs) return true;
+  }
+  return false;
 }
 
 function notifyWatchlistSpot({ callsign, frequency, mode, source, reference, locationDesc }) {
@@ -691,8 +722,8 @@ function connectCluster() {
       const spot = buildClusterSpot(raw, myPos, myEntity);
 
       // Watchlist notification
-      const watchSet = parseWatchlist(settings.watchlist);
-      if (watchSet.has(raw.callsign.toUpperCase())) {
+      const watchRules = parseWatchlist(settings.watchlist);
+      if (watchlistMatch(watchRules, raw.callsign, spot.band, raw.mode)) {
         notifyWatchlistSpot({
           callsign: raw.callsign,
           frequency: raw.frequency,
@@ -900,8 +931,8 @@ function connectRbn() {
 
     // Watchlist notification for RBN spots (skip self — own callsign is expected)
     const myCall = (settings.myCallsign || '').toUpperCase();
-    const rbnWatchSet = parseWatchlist(settings.watchlist);
-    if (rbnWatchSet.has(raw.callsign.toUpperCase()) && raw.callsign.toUpperCase() !== myCall) {
+    const rbnWatchRules = parseWatchlist(settings.watchlist);
+    if (watchlistMatch(rbnWatchRules, raw.callsign, spot.band, raw.mode) && raw.callsign.toUpperCase() !== myCall) {
       notifyWatchlistSpot({
         callsign: raw.callsign,
         frequency: raw.frequency,
@@ -918,7 +949,7 @@ function connectRbn() {
     }
 
     // Add watchlist callsigns (not self) to main table as merged spots
-    if (rbnWatchSet.has(raw.callsign.toUpperCase()) && raw.callsign.toUpperCase() !== myCall) {
+    if (watchlistMatch(rbnWatchRules, raw.callsign, spot.band, raw.mode) && raw.callsign.toUpperCase() !== myCall) {
       // Resolve activator's location (not spotter's) for main table/map
       let actLat = null, actLon = null, actDist = null, actBearing = null, actLoc = '', actContinent = '';
       if (ctyDb) {
@@ -1055,8 +1086,8 @@ function connectPskr() {
     }
 
     // Watchlist notification
-    const watchSet = parseWatchlist(settings.watchlist);
-    if (watchSet.has(raw.callsign.toUpperCase())) {
+    const pskrWatchRules = parseWatchlist(settings.watchlist);
+    if (watchlistMatch(pskrWatchRules, raw.callsign, spot.band, raw.mode)) {
       notifyWatchlistSpot({
         callsign: raw.callsign,
         frequency: raw.frequency,
@@ -3983,11 +4014,10 @@ async function refreshSpots() {
     }
 
     // Watchlist notifications for POTA/SOTA spots (5-min dedup in notifyWatchlistSpot)
-    const potaSotaWatchSet = parseWatchlist(settings.watchlist);
-    if (potaSotaWatchSet.size > 0) {
+    const potaSotaWatchRules = parseWatchlist(settings.watchlist);
+    if (potaSotaWatchRules.length > 0) {
       for (const spot of lastPotaSotaSpots) {
-        const csUpper = spot.callsign.toUpperCase();
-        if (potaSotaWatchSet.has(csUpper)) {
+        if (watchlistMatch(potaSotaWatchRules, spot.callsign, spot.band, spot.mode)) {
           notifyWatchlistSpot({
             callsign: spot.callsign,
             frequency: spot.frequency,
@@ -5461,6 +5491,10 @@ function tuneRadio(freqKhz, mode, brng, { clearXit } = {}) {
   } else if (m === 'FT8' || m === 'FT4' || m === 'FT2' || m === 'DIGU' || m === 'DIGL' || m === 'PKTUSB' || m === 'PKTLSB') {
     filterWidth = settings.digitalFilterWidth || 0;
   }
+  // If no per-mode preset but user adjusted filter via live controls, preserve it
+  if (!filterWidth && _currentFilterWidth > 0) {
+    filterWidth = _currentFilterWidth;
+  }
 
   if (settings.enableRotor && settings.rotorActive !== false && settings.rotorMode !== 'manual' && brng != null && !isNaN(brng)) {
     sendRotorBearing(Math.round(brng));
@@ -6420,7 +6454,7 @@ app.whenReady().then(() => {
     const allowed = [
       'https://www.qrz.com/', 'https://caseystanton.com/', 'https://github.com/Waffleslop/POTACAT/',
       'https://hamlib.github.io/', 'https://github.com/Hamlib/', 'https://discord.gg/',
-      'https://potacat.com/', 'https://buymeacoffee.com/potacat', 'https://docs.google.com/spreadsheets/',
+      'https://potacat.com/', 'https://docs.potacat.com/', 'https://buymeacoffee.com/potacat', 'https://docs.google.com/spreadsheets/',
       'https://pota.app/', 'https://www.sotadata.org.uk/', 'https://wwff.co/', 'https://llota.app/',
       'https://tailscale.com', 'https://worldradioleague.com',
     ];
