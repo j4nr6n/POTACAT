@@ -1928,23 +1928,28 @@
     setAudioStatus('Audio');
   }
 
-  function handleSignal(data) {
-    if (!data) return;
-    if (data.type === 'sdp') {
-      if (!pc) return;
-      pc.setRemoteDescription(data.sdp)
-        .then(() => {
-          if (data.sdp.type === 'offer') {
-            return pc.createAnswer().then(answer => {
-              return pc.setLocalDescription(answer).then(() => {
-                ws.send(JSON.stringify({ type: 'signal', data: { type: 'sdp', sdp: pc.localDescription } }));
-              });
-            });
+  async function handleSignal(data) {
+    if (!data || !pc) return;
+    try {
+      if (data.type === 'sdp') {
+        await pc.setRemoteDescription(data.sdp);
+        if (data.sdp.type === 'offer' && pc && pc.signalingState === 'have-remote-offer') {
+          var answer = await pc.createAnswer();
+          await pc.setLocalDescription(answer);
+          if (pc && ws && ws.readyState === WebSocket.OPEN) {
+            // Extract as plain object — RTCSessionDescription getters
+            // don't survive JSON.stringify in Firefox/Safari
+            ws.send(JSON.stringify({ type: 'signal', data: { type: 'sdp', sdp: {
+              type: pc.localDescription.type,
+              sdp: pc.localDescription.sdp,
+            }}}));
           }
-        })
-        .catch(err => { console.error('SDP error (may recover):', err); });
-    } else if (data.type === 'ice') {
-      if (pc) pc.addIceCandidate(data.candidate).catch(() => {});
+        }
+      } else if (data.type === 'ice') {
+        await pc.addIceCandidate(data.candidate);
+      }
+    } catch (err) {
+      console.error('WebRTC signal error:', err);
     }
   }
 
