@@ -5,6 +5,9 @@ const fs = require('fs');
 // Prevent EPIPE crashes when stdout/stderr pipe is closed
 process.stdout?.on('error', () => {});
 process.stderr?.on('error', () => {});
+
+// Allow AudioContext to play without user gesture (required for JTCAT audio capture in Chromium 142+)
+app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required');
 const { execFile, spawn } = require('child_process');
 const { fetchSpots: fetchPotaSpots } = require('./lib/pota');
 const { fetchSpots: fetchSotaSpots, fetchSummitCoordsBatch, summitCache, loadAssociations, getAssociationName, SotaUploader } = require('./lib/sota');
@@ -517,6 +520,8 @@ async function connectCat() {
       return;
     }
     cat = new RigctldClient();
+    cat._debug = true;
+    cat.on('log', sendCatLog);
     cat.on('status', (s) => {
       // Enrich disconnect events with last rigctld stderr
       if (!s.connected && rigctldStderr) {
@@ -535,6 +540,8 @@ async function connectCat() {
   } else if (target && target.type === 'rigctldnet') {
     // Connect directly to remote rigctld server — no local spawn
     cat = new RigctldClient();
+    cat._debug = true;
+    cat.on('log', sendCatLog);
     cat.on('status', (s) => {
       sendCatLog(`rigctld-net status: connected=${s.connected}${s.error ? ' error=' + s.error : ''}`);
       sendCatStatus(s);
@@ -3469,6 +3476,7 @@ async function startRemoteAudio() {
       preload: path.join(__dirname, 'preload-remote-audio.js'),
       contextIsolation: true,
       nodeIntegration: false,
+      autoplayPolicy: 'no-user-gesture-required',
     },
   });
 
@@ -4634,6 +4642,7 @@ function createWindow() {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
       nodeIntegration: false,
+      autoplayPolicy: 'no-user-gesture-required',
     },
   });
 
