@@ -3257,6 +3257,43 @@ function connectRemote() {
     remoteJtcatBroadcastQso();
   });
 
+  remoteServer.on('jtcat-skip-phase', () => {
+    if (!remoteJtcatQso || remoteJtcatQso.phase === 'done' || remoteJtcatQso.phase === 'idle') return;
+    const q = remoteJtcatQso;
+    const myCall = q.myCall;
+    if (q.mode === 'cq') {
+      if (q.phase === 'cq-report') {
+        q.txMsg = q.call + ' ' + myCall + ' RR73';
+        q.phase = 'cq-rr73';
+      } else if (q.phase === 'cq-rr73') {
+        q.phase = 'done';
+        ft8Engine._txEnabled = false;
+        ft8Engine.setTxMessage('');
+        ft8Engine.setTxSlot('auto');
+      }
+    } else {
+      if (q.phase === 'reply') {
+        const rpt = q.sentReport || '-10';
+        q.txMsg = q.call + ' ' + myCall + ' R' + rpt;
+        q.phase = 'r+report';
+      } else if (q.phase === 'r+report') {
+        q.txMsg = q.call + ' ' + myCall + ' RR73';
+        q.phase = '73';
+      } else if (q.phase === '73') {
+        q.phase = 'done';
+        ft8Engine._txEnabled = false;
+        ft8Engine.setTxMessage('');
+        ft8Engine.setTxSlot('auto');
+      }
+    }
+    q.txRetries = 0;
+    if (q.txMsg && q.phase !== 'done') {
+      remoteJtcatSetTxMsg(q.txMsg);
+    }
+    remoteJtcatBroadcastQso();
+    console.log('[JTCAT] Remote skip to phase:', q.phase, '— TX:', q.txMsg);
+  });
+
   remoteServer.on('jtcat-set-band', ({ band, freqKhz }) => {
     if (freqKhz) tuneRadio(freqKhz, 'DIGU');
   });

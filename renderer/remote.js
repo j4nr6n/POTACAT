@@ -3562,6 +3562,7 @@
     let html = '<div class="ft8-qso-header">' +
       '<span style="font-weight:600;color:#fff">' + esc(q.call || '???') + '</span>' +
       (q.grid ? ' <span style="color:#4fc3f7">' + esc(q.grid) + '</span>' : '') +
+      '<button type="button" class="ft8-qso-skip-btn" id="ft8-qso-skip" title="Skip to next message">Skip</button>' +
       '<button type="button" class="ft8-qso-cancel-btn" id="ft8-qso-cancel">&times;</button>' +
       '</div>';
 
@@ -3581,7 +3582,9 @@
 
     ft8QsoExchange.innerHTML = html;
 
-    // Bind cancel button
+    // Bind skip and cancel buttons
+    const skipBtn = document.getElementById('ft8-qso-skip');
+    if (skipBtn) skipBtn.addEventListener('click', () => ft8Send({ type: 'jtcat-skip-phase' }));
     const cancelBtn = document.getElementById('ft8-qso-cancel');
     if (cancelBtn) cancelBtn.addEventListener('click', () => ft8Send({ type: 'jtcat-cancel-qso' }));
   }
@@ -3640,7 +3643,7 @@
   }
 
   // --- Waterfall rendering ---
-  let ft8WfVisible = true;
+  let ft8WfVisible = false;
   function ft8RenderWaterfall(bins) {
     if (!bins || !bins.length) return;
     if (!ft8WfVisible) return;
@@ -3730,7 +3733,7 @@
 
   // Waterfall toggle
   const ft8WfToggle = document.getElementById('ft8-wf-toggle');
-  ft8WfToggle.classList.add('active');
+  // Waterfall starts hidden — button not active until toggled
   ft8WfToggle.addEventListener('click', () => {
     ft8WfVisible = !ft8WfVisible;
     ft8Waterfall.classList.toggle('hidden', !ft8WfVisible);

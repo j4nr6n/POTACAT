@@ -459,6 +459,7 @@ const jtcatQsoTracker = document.getElementById('jtcat-qso-tracker');
 const jtcatQsoLabel = document.getElementById('jtcat-qso-label');
 const jtcatQsoSteps = document.getElementById('jtcat-qso-steps');
 const jtcatQsoCancelBtn = document.getElementById('jtcat-qso-cancel');
+const jtcatQsoSkipBtn = document.getElementById('jtcat-qso-skip');
 const jtcatCqFilterBtn = document.getElementById('jtcat-cq-filter');
 const jtcatSliceSelect = document.getElementById('jtcat-slice');
 const jtcatSliceContainer = document.getElementById('jtcat-slice-select');
@@ -13281,6 +13282,41 @@ function jtcatProcessReplyResponse(myCall) {
   }
 }
 
+// --- Skip to next QSO phase ---
+function jtcatSkipPhase() {
+  if (!jtcatQso || jtcatQso.phase === 'done' || jtcatQso.phase === 'idle') return;
+  var q = jtcatQso;
+  var myCall = q.myCall;
+  if (q.mode === 'cq') {
+    if (q.phase === 'cq-report') {
+      q.txMsg = q.call + ' ' + myCall + ' RR73';
+      q.phase = 'cq-rr73';
+    } else if (q.phase === 'cq-rr73') {
+      q.phase = 'done';
+      jtcatDisableTxUi();
+      jtcatCallCqBtn.classList.remove('active');
+      jtcatTxMsgText.textContent = 'QSO complete: ' + q.call;
+    }
+  } else {
+    if (q.phase === 'reply') {
+      var rpt = q.sentReport || '-10';
+      q.txMsg = q.call + ' ' + myCall + ' R' + rpt;
+      q.phase = 'r+report';
+    } else if (q.phase === 'r+report') {
+      q.txMsg = q.call + ' ' + myCall + ' RR73';
+      q.phase = '73';
+    } else if (q.phase === '73') {
+      q.phase = 'done';
+      jtcatDisableTxUi();
+      jtcatTxMsgText.textContent = 'QSO complete: ' + q.call;
+    }
+  }
+  q.txRetries = 0;
+  jtcatSetTxAndSend(q.txMsg || '');
+  renderJtcatQsoTracker();
+  console.log('[JTCAT] Manual skip to phase:', q.phase, '— TX:', q.txMsg);
+}
+
 // --- QSO state broadcast to pop-out ---
 function broadcastJtcatQsoState() {
   if (!jtcatPopoutOpen) return;
@@ -13360,6 +13396,9 @@ function jtcatClearQso() {
 }
 
 // Cancel QSO button
+jtcatQsoSkipBtn.addEventListener('click', function() {
+  jtcatSkipPhase();
+});
 jtcatQsoCancelBtn.addEventListener('click', function() {
   jtcatDisableTxUi();
   jtcatClearQso();
