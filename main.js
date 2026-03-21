@@ -2438,7 +2438,9 @@ function connectRemote() {
         }, 1500);
       }
       // Route keying based on model's preferred paddle method
-      const paddleMethod = cwCaps.paddleKey || (rigType === 'icom' ? 'dtr' : 'txrx');
+      // Icom default: txrx (CI-V PTT 0x1C) — universal, no DTR config needed
+      // Models with DTR keying support can override via cw.paddleKey: 'dtr'
+      const paddleMethod = cwCaps.paddleKey || 'txrx';
       if (paddleMethod === 'dtr') {
         cat.setCwKeyDtr(down, cwCaps.dtrPins);
       } else if (paddleMethod === 'ta' && cwCaps.taKey) {
