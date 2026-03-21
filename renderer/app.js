@@ -12832,6 +12832,7 @@ async function startJtcatAudio() {
     console.log('[JTCAT] Audio capture started, device:', s.remoteAudioInput || 'default', 'sample rate:', jtcatAudioCtx.sampleRate);
   } catch (err) {
     console.error('[JTCAT] Audio capture failed:', err.message || err);
+    try { window.api.jtcatLog('[JTCAT AUDIO] FAILED: ' + (err.message || err)); } catch(e){}
   }
 }
 
@@ -12856,6 +12857,7 @@ function stopJtcatAudio() {
 }
 
 function startJtcatView() {
+  try { window.api.jtcatLog('[JTCAT AUDIO] startJtcatView() — jtcatRunning=' + jtcatRunning + ' jtcatRemoteActive=' + jtcatRemoteActive); } catch(e){}
   if (jtcatRunning) return;
   jtcatRunning = true;
   jtcatDecodes = [];
@@ -12865,6 +12867,8 @@ function startJtcatView() {
   if (!jtcatRemoteActive) {
     window.api.jtcatStart(jtcatModeSelect.value);
     startJtcatAudio();
+  } else {
+    try { window.api.jtcatLog('[JTCAT AUDIO] SKIPPED startJtcatAudio — jtcatRemoteActive is true'); } catch(e){}
   }
   startJtcatCountdown();
 }
