@@ -1,0 +1,53 @@
+#!/bin/bash
+# Build FT4 WASM modules using Emscripten
+# Run from lib/ft4/ directory
+set -e
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+cd "$SCRIPT_DIR"
+
+mkdir -p wasm
+
+# Shared ft8_lib lives in the ft2 directory
+FT8_LIB="../ft2/ft8_lib"
+COMMON_C="$FT8_LIB/ft8/message.c $FT8_LIB/ft8/text.c $FT8_LIB/ft8/encode.c $FT8_LIB/ft8/constants.c $FT8_LIB/ft8/crc.c"
+
+echo "=== Building FT4 Encoder WASM ==="
+emcc \
+  -s EXPORT_NAME="'___ft4EncodeModule___'" \
+  -I"$FT8_LIB" -I. \
+  -sSTACK_SIZE=4MB \
+  ft4_encode.c $COMMON_C \
+  -o wasm/ft4_encode.js \
+  -sEXPORTED_FUNCTIONS='["_ft4_exec_encode", "_free", "_malloc"]' \
+  -sEXPORTED_RUNTIME_METHODS='["cwrap","HEAPF32","HEAPU8"]' \
+  -s ASYNCIFY=1 \
+  -s 'ASYNCIFY_IMPORTS=["_ft4_exec_encode"]' \
+  --no-entry -flto \
+  -s EXPORT_ES6=1 \
+  -s NO_FILESYSTEM=1 \
+  -s ALLOW_MEMORY_GROWTH=1 \
+  -s AUTO_NATIVE_LIBRARIES=0
+
+echo "=== Building FT4 Decoder WASM ==="
+emcc \
+  -s EXPORT_NAME="'___ft4DecodeModule___'" \
+  -I"$FT8_LIB" -I. \
+  -sSTACK_SIZE=8MB \
+  ft4_decode.c ft4_sync.c \
+  $COMMON_C \
+  $FT8_LIB/ft8/ldpc.c \
+  $FT8_LIB/fft/kiss_fft.c $FT8_LIB/fft/kiss_fftr.c \
+  -o wasm/ft4_decode.js \
+  -sEXPORTED_FUNCTIONS='["_ft4_init_decode", "_ft4_exec_decode", "_free", "_malloc"]' \
+  -sEXPORTED_RUNTIME_METHODS='["cwrap","HEAPF32","HEAPU8"]' \
+  -s ASYNCIFY=1 \
+  -s 'ASYNCIFY_IMPORTS=["_ft4_exec_decode"]' \
+  --no-entry -flto \
+  -s EXPORT_ES6=1 \
+  -s NO_FILESYSTEM=1 \
+  -s ALLOW_MEMORY_GROWTH=1 \
+  -s AUTO_NATIVE_LIBRARIES=0
+
+echo "=== Build complete ==="
+ls -la wasm/
