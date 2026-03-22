@@ -195,7 +195,7 @@ const recentNotifications = new Map(); // callsign → timestamp for dedup (5-mi
 // Parse watchlist string into array of { callsign, band, mode } rules.
 // Format: "K3SBP, K4SWL:20m, KI6NAZ:CW, W1AW:40m:SSB"
 // Band/mode qualifiers are optional — omitted means match any.
-const WATCH_BANDS = new Set(['160m','80m','60m','40m','30m','20m','17m','15m','12m','10m','6m','2m','70cm']);
+const WATCH_BANDS = new Set(['160m','80m','60m','40m','30m','20m','17m','15m','12m','10m','6m','4m','2m','70cm']);
 function parseWatchlist(str) {
   if (!str) return [];
   const rules = [];

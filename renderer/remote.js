@@ -4517,6 +4517,7 @@
     if (f >= 24890 && f <= 24990) return '12m';
     if (f >= 28000 && f <= 29700) return '10m';
     if (f >= 50000 && f <= 54000) return '6m';
+    if (f >= 70000 && f <= 70500) return '4m';
     if (f >= 144000 && f <= 148000) return '2m';
     if (f >= 530 && f <= 1700) return 'MW';
     if (f >= 2300 && f <= 26100) return 'SW';
