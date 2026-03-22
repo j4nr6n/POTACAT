@@ -12776,7 +12776,9 @@ async function startJtcatAudio() {
           ' enabled=' + (audioTrack ? audioTrack.enabled : 'N/A') +
           ' muted=' + (audioTrack ? audioTrack.muted : 'N/A'));
 
-    jtcatAudioCtx = new AudioContext({ sampleRate: 12000 });
+    // Use native sample rate — Chromium 142 doesn't properly resample cross-rate
+    // MediaStreamSource inputs. We'll downsample to 12kHz in the processor callback.
+    jtcatAudioCtx = new AudioContext();
     jtLog('[JTCAT AUDIO] AudioContext state=' + jtcatAudioCtx.state + ' sampleRate=' + jtcatAudioCtx.sampleRate);
     if (jtcatAudioCtx.state === 'suspended') {
       await jtcatAudioCtx.resume();
@@ -12784,25 +12786,43 @@ async function startJtcatAudio() {
     }
     var source = jtcatAudioCtx.createMediaStreamSource(jtcatAudioStream);
 
-    // AnalyserNode for waterfall FFT (2048-point → 1024 frequency bins covering 0–6000 Hz)
+    // AnalyserNode for waterfall FFT
     jtcatAnalyser = jtcatAudioCtx.createAnalyser();
     jtcatAnalyser.fftSize = 2048;
     jtcatAnalyser.smoothingTimeConstant = 0.3;
     source.connect(jtcatAnalyser);
 
-    // ScriptProcessorNode: 4096 samples at 12kHz = ~341ms per callback
-    jtcatAudioProcessor = jtcatAudioCtx.createScriptProcessor(4096, 1, 1);
+    // ScriptProcessorNode captures at native sample rate; downsample to 12kHz for FT8 decoder
+    var nativeRate = jtcatAudioCtx.sampleRate;
+    var dsRatio = nativeRate / 12000;
+    jtLog('[JTCAT AUDIO] Native rate=' + nativeRate + ' downsample ratio=' + dsRatio.toFixed(2));
+    var bufSize = dsRatio > 1 ? 4096 * Math.ceil(dsRatio) : 4096;
+    // Round up to power of 2
+    bufSize = Math.pow(2, Math.ceil(Math.log2(bufSize)));
+    if (bufSize > 16384) bufSize = 16384;
+    jtcatAudioProcessor = jtcatAudioCtx.createScriptProcessor(bufSize, 1, 1);
     var _jtcatAudioCallbackCount = 0;
     jtcatAudioProcessor.onaudioprocess = function(e) {
       try {
-        var samples = e.inputBuffer.getChannelData(0);
+        var rawSamples = e.inputBuffer.getChannelData(0);
         _jtcatAudioCallbackCount++;
+        // Downsample to 12kHz if needed
+        var samples;
+        if (dsRatio > 1.01) {
+          var outLen = Math.floor(rawSamples.length / dsRatio);
+          samples = new Float32Array(outLen);
+          for (var i = 0; i < outLen; i++) {
+            samples[i] = rawSamples[Math.round(i * dsRatio)];
+          }
+        } else {
+          samples = rawSamples;
+        }
         if (_jtcatAudioCallbackCount <= 3 || _jtcatAudioCallbackCount % 100 === 0) {
           var maxVal = 0;
           for (var i = 0; i < samples.length; i++) if (Math.abs(samples[i]) > maxVal) maxVal = Math.abs(samples[i]);
-          jtLog('[JTCAT AUDIO] onaudioprocess #' + _jtcatAudioCallbackCount + ' len=' + samples.length + ' peak=' + maxVal.toFixed(6));
+          jtLog('[JTCAT AUDIO] onaudioprocess #' + _jtcatAudioCallbackCount + ' rawLen=' + rawSamples.length + ' dsLen=' + samples.length + ' peak=' + maxVal.toFixed(6));
         }
-        // Send copy of buffer to main process for FT8 decode
+        // Send to main process for FT8 decode
         window.api.jtcatAudio(Array.from(samples));
       } catch (err) {
         jtLog('[JTCAT AUDIO] processor error: ' + (err.message || err));
@@ -13713,9 +13733,10 @@ function jtcatWaterfallLoop() {
     _wfLogCount++;
   }
 
-  // AnalyserNode at 12kHz with fftSize=2048 gives 1024 bins covering 0–6000 Hz.
-  // FT8 passband is 0–3000 Hz = first half of bins (512 bins).
-  var passbandBins = Math.floor(freqData.length / 2); // 0–3000 Hz
+  // AnalyserNode covers 0 to sampleRate/2. FT8 passband is 0–3000 Hz.
+  // At native rate (e.g. 48kHz), bins cover 0–24000 Hz, so 3000 Hz = 3000/24000 * 1024 = ~128 bins.
+  var nyquist = (jtcatAudioCtx ? jtcatAudioCtx.sampleRate : 12000) / 2;
+  var passbandBins = Math.floor(3000 / nyquist * freqData.length);
 
   var w = jtcatWaterfall.width;
   var h = jtcatWaterfall.height;
@@ -13794,7 +13815,7 @@ function jtcatWaterfallLoop() {
   jtcatQuietFreqFrame++;
   if (jtcatQuietFreqFrame % 30 === 0) {
     // Scan 200–2800 Hz in 50Hz windows (avoid edges)
-    var binHz = 6000 / freqData.length; // ~5.86 Hz per bin
+    var binHz = nyquist / freqData.length;
     var windowBins = Math.round(50 / binHz); // ~8-9 bins per 50Hz window
     var startBin = Math.round(200 / binHz);
     var endBin = Math.round(2800 / binHz);

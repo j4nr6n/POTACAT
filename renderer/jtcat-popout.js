@@ -761,12 +761,26 @@
         delete constraints.deviceId;
         popoutAudioStream = await navigator.mediaDevices.getUserMedia({ audio: constraints });
       }
-      popoutAudioCtx = new AudioContext({ sampleRate: 12000 });
+      popoutAudioCtx = new AudioContext();
       if (popoutAudioCtx.state === 'suspended') await popoutAudioCtx.resume();
+      var nativeRate = popoutAudioCtx.sampleRate;
+      var dsRatio = nativeRate / 12000;
+      console.log('[JTCAT popout] AudioContext rate=' + nativeRate + ' ds=' + dsRatio.toFixed(2));
       var source = popoutAudioCtx.createMediaStreamSource(popoutAudioStream);
-      popoutAudioProcessor = popoutAudioCtx.createScriptProcessor(4096, 1, 1);
+      var bufSize = dsRatio > 1 ? 4096 * Math.ceil(dsRatio) : 4096;
+      bufSize = Math.pow(2, Math.ceil(Math.log2(bufSize)));
+      if (bufSize > 16384) bufSize = 16384;
+      popoutAudioProcessor = popoutAudioCtx.createScriptProcessor(bufSize, 1, 1);
       popoutAudioProcessor.onaudioprocess = function(e) {
-        var samples = e.inputBuffer.getChannelData(0);
+        var raw = e.inputBuffer.getChannelData(0);
+        var samples;
+        if (dsRatio > 1.01) {
+          var outLen = Math.floor(raw.length / dsRatio);
+          samples = new Float32Array(outLen);
+          for (var i = 0; i < outLen; i++) samples[i] = raw[Math.round(i * dsRatio)];
+        } else {
+          samples = raw;
+        }
         window.api.jtcatAudio(Array.from(samples));
       };
       source.connect(popoutAudioProcessor);
