@@ -102,6 +102,10 @@
         "filter": [
           "**/*"
         ]
+      },
+      {
+        "from": "scripts/launcher.js",
+        "to": "scripts/launcher.js"
       }
     ],
     "publish": {
