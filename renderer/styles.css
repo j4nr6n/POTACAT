@@ -185,7 +185,7 @@ body {
 }
 
 .platform-darwin .titlebar {
-  padding-left: 70px;
+  padding-left: 80px;
 }
 
 .platform-darwin .titlebar-controls {
@@ -3550,6 +3550,72 @@ dialog input, dialog select {
   background: #2a6e4e;
   color: #fff;
   border-color: #2a6e4e;
+}
+
+/* Rig popover tabs */
+.rig-popover-tabs {
+  display: flex;
+  gap: 2px;
+  margin-bottom: 6px;
+  border-bottom: 1px solid var(--border-primary);
+  padding-bottom: 4px;
+}
+
+.rig-tab-btn {
+  background: none;
+  border: none;
+  color: var(--text-tertiary);
+  font-size: 11px;
+  padding: 2px 8px;
+  cursor: pointer;
+  border-radius: 3px 3px 0 0;
+}
+
+.rig-tab-btn:hover {
+  color: var(--text-primary);
+}
+
+.rig-tab-btn.active {
+  color: var(--text-primary);
+  border-bottom: 2px solid #4ecca3;
+}
+
+.rig-tab-panel.hidden {
+  display: none;
+}
+
+/* Custom CAT button slots */
+.rig-custom-slot {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+  padding: 3px 0;
+}
+
+.rig-custom-name {
+  width: 70px;
+  background: var(--bg-primary);
+  border: 1px solid var(--border-primary);
+  color: var(--text-primary);
+  border-radius: 3px;
+  padding: 3px 5px;
+  font-size: 11px;
+}
+
+.rig-custom-cmd {
+  flex: 1;
+  background: var(--bg-primary);
+  border: 1px solid var(--border-primary);
+  color: var(--text-primary);
+  border-radius: 3px;
+  padding: 3px 5px;
+  font-size: 11px;
+  font-family: monospace;
+}
+
+.rig-custom-send {
+  padding: 3px 6px !important;
+  font-size: 10px !important;
 }
 
 /* Hotkeys dialog */
