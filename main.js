@@ -1343,6 +1343,18 @@ async function saveQsoRecord(qsoData) {
     }
   }
 
+  // Update worked parks set when a POTA park is logged (live "new-to-me" update)
+  const loggedParkRef = (qsoData.sig === 'POTA' && qsoData.sigInfo) ? qsoData.sigInfo.toUpperCase() : '';
+  if (loggedParkRef && !workedParks.has(loggedParkRef)) {
+    workedParks.set(loggedParkRef, { reference: loggedParkRef });
+    if (win && !win.isDestroyed()) {
+      win.webContents.send('worked-parks', [...workedParks.entries()]);
+    }
+    if (remoteServer && remoteServer.running) {
+      remoteServer.sendWorkedParks([...workedParks.keys()]);
+    }
+  }
+
   // Forward to external logbook if enabled
   // skipLogbookForward: multi-park activations send one ADIF record per park ref,
   // but external logbooks only need one QSO per physical contact
