@@ -13045,48 +13045,31 @@ async function startJtcatAudio() {
     var nativeRate = jtcatAudioCtx.sampleRate;
     var dsRatio = nativeRate / 12000;
 
-    try {
-      // AudioWorklet: runs on audio thread, reliable in Chromium 134+
-      // Loaded from file (not blob URL) to satisfy CSP default-src 'self'
-      await jtcatAudioCtx.audioWorklet.addModule('jtcat-audio-worklet.js');
-      var workletNode = new AudioWorkletNode(jtcatAudioCtx, 'jtcat-processor', {
-        processorOptions: { dsRatio: dsRatio },
-      });
-      workletNode.port.onmessage = function(e) {
-        window.api.jtcatAudio(e.data);
-      };
-      source.connect(workletNode);
-      workletNode.connect(jtcatAudioCtx.destination);
-      jtcatAudioProcessor = workletNode;
-      console.log('[JTCAT] Using AudioWorkletNode for audio capture');
-    } catch (workletErr) {
-      // Fallback: ScriptProcessorNode (deprecated but still functional on older Electron)
-      console.warn('[JTCAT] AudioWorklet failed, falling back to ScriptProcessorNode:', workletErr.message);
-      var bufSize = dsRatio > 1 ? 4096 * Math.ceil(dsRatio) : 4096;
-      bufSize = Math.pow(2, Math.ceil(Math.log2(bufSize)));
-      if (bufSize > 16384) bufSize = 16384;
-      jtcatAudioProcessor = jtcatAudioCtx.createScriptProcessor(bufSize, 1, 1);
-      jtcatAudioProcessor.onaudioprocess = function(e) {
-        try {
-          var rawSamples = e.inputBuffer.getChannelData(0);
-          var samples;
-          if (dsRatio > 1.01) {
-            var outLen = Math.floor(rawSamples.length / dsRatio);
-            samples = new Float32Array(outLen);
-            for (var i = 0; i < outLen; i++) {
-              samples[i] = rawSamples[Math.round(i * dsRatio)];
-            }
-          } else {
-            samples = rawSamples;
+    // ScriptProcessorNode: captures audio at native rate, downsamples to 12kHz for FT8 decoder
+    var bufSize = dsRatio > 1 ? 4096 * Math.ceil(dsRatio) : 4096;
+    bufSize = Math.pow(2, Math.ceil(Math.log2(bufSize)));
+    if (bufSize > 16384) bufSize = 16384;
+    jtcatAudioProcessor = jtcatAudioCtx.createScriptProcessor(bufSize, 1, 1);
+    jtcatAudioProcessor.onaudioprocess = function(e) {
+      try {
+        var rawSamples = e.inputBuffer.getChannelData(0);
+        var samples;
+        if (dsRatio > 1.01) {
+          var outLen = Math.floor(rawSamples.length / dsRatio);
+          samples = new Float32Array(outLen);
+          for (var i = 0; i < outLen; i++) {
+            samples[i] = rawSamples[Math.round(i * dsRatio)];
           }
-          window.api.jtcatAudio(Array.from(samples));
-        } catch (err) {
-          console.error('[JTCAT] Audio processor error:', err.message || err);
+        } else {
+          samples = rawSamples;
         }
-      };
-      source.connect(jtcatAudioProcessor);
-      jtcatAudioProcessor.connect(jtcatAudioCtx.destination);
-    }
+        window.api.jtcatAudio(Array.from(samples));
+      } catch (err) {
+        console.error('[JTCAT] Audio processor error:', err.message || err);
+      }
+    };
+    source.connect(jtcatAudioProcessor);
+    jtcatAudioProcessor.connect(jtcatAudioCtx.destination);
 
     // Monitor audio stream — some rigs (e.g. Yaesu FT-710) disconnect USB audio during TX
     var audioTrack = jtcatAudioStream.getAudioTracks()[0];
