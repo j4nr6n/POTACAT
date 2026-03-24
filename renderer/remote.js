@@ -4432,14 +4432,10 @@
   // Init dropdown from saved value
   var soPaddleType = document.getElementById('so-paddle-type');
 
-  // Feature detection — remove MIDI option if Web MIDI unavailable
-  if (!webMidiSupported && soPaddleType) {
-    var midiOpt = soPaddleType.querySelector('option[value="midi"]');
-    if (midiOpt) midiOpt.remove();
-    if (paddleType === 'midi') {
-      paddleType = 'tinymidi';
-      localStorage.setItem('echocat-paddle-type', paddleType);
-    }
+  // If Web MIDI unavailable and user had it selected, fall back to keyboard mode
+  if (!webMidiSupported && paddleType === 'midi') {
+    paddleType = 'tinymidi';
+    localStorage.setItem('echocat-paddle-type', paddleType);
   }
 
   if (soPaddleType) {
@@ -4504,10 +4500,13 @@
     if (soMidiConfig) {
       soMidiConfig.classList.toggle('hidden', paddleType !== 'midi');
     }
-    if (paddleType === 'midi' && webMidiSupported) {
-      ecPopulateMidiDevices();
-    }
-    if (paddleType !== 'midi') {
+    if (paddleType === 'midi') {
+      if (webMidiSupported) {
+        ecPopulateMidiDevices();
+      } else {
+        ecUpdateMidiStatus('Web MIDI not available in this browser. Try Safari 18+ or Chrome on desktop.', 'error');
+      }
+    } else {
       ecDisconnectMidi();
     }
   }
@@ -4592,16 +4591,22 @@
   }
 
   async function ecPopulateMidiDevices() {
-    if (!webMidiSupported || !soMidiDevice) return;
-    soMidiDevice.innerHTML = '<option value="">— No MIDI devices —</option>';
+    if (!soMidiDevice) return;
+    if (!webMidiSupported) {
+      ecUpdateMidiStatus('Web MIDI not available in this browser', 'error');
+      return;
+    }
+    soMidiDevice.innerHTML = '<option value="">— Scanning... —</option>';
+    ecUpdateMidiStatus('Requesting MIDI access...', '');
     try {
       if (!ecMidiAccess) {
-        ecMidiAccess = await navigator.requestMIDIAccess();
+        ecMidiAccess = await navigator.requestMIDIAccess({ sysex: false });
         ecMidiAccess.onstatechange = function() {
           if (paddleType === 'midi') ecPopulateMidiDevices();
         };
       }
       var inputs = Array.from(ecMidiAccess.inputs.values());
+      var outputs = Array.from(ecMidiAccess.outputs.values());
       if (inputs.length > 0) {
         soMidiDevice.innerHTML = '';
         for (var i = 0; i < inputs.length; i++) {
@@ -4615,11 +4620,14 @@
           soMidiDevice.value = savedDevice;
         }
         ecConnectMidi(soMidiDevice.value);
+        ecUpdateMidiStatus(inputs.length + ' device(s) found', '');
       } else {
-        ecUpdateMidiStatus('No devices found', '');
+        soMidiDevice.innerHTML = '<option value="">— No MIDI devices —</option>';
+        ecUpdateMidiStatus('MIDI access OK but 0 inputs, ' + outputs.length + ' outputs. Check browser MIDI permission.', '');
       }
     } catch (err) {
       console.warn('Web MIDI error:', err);
+      soMidiDevice.innerHTML = '<option value="">— No MIDI devices —</option>';
       ecUpdateMidiStatus('MIDI error: ' + err.message, 'error');
     }
   }
