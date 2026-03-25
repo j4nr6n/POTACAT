@@ -608,6 +608,9 @@ async function connectCat() {
     if (serialModel && serialModel.cw && serialModel.cw.kyParam != null) {
       cat._kyParam = serialModel.cw.kyParam;
     }
+    if (serialModel && serialModel.digiMd != null) {
+      cat._digiMd = serialModel.digiMd;
+    }
     cat.on('log', sendCatLog);
     cat.on('status', sendCatStatus);
     cat.on('frequency', sendCatFrequency);
