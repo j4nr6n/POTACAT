@@ -35,6 +35,13 @@ const { fetchSpots: fetchPotaSpots } = require('./lib/pota');
 const { fetchSpots: fetchSotaSpots, fetchSummitCoordsBatch, summitCache, loadAssociations, getAssociationName, SotaUploader } = require('./lib/sota');
 const sotaUploader = new SotaUploader();
 const { CatClient, RigctldClient, CivClient, listSerialPorts } = require('./lib/cat');
+// New rig abstraction layer
+const { RigController } = require('./lib/rig-controller');
+const { TcpTransport, SerialTransport } = require('./lib/transport');
+const { KenwoodCodec } = require('./lib/codecs/kenwood-codec');
+const { RigctldCodec } = require('./lib/codecs/rigctld-codec');
+const { CivCodec } = require('./lib/codecs/civ-codec');
+const { getTuneQuirks } = require('./lib/rig-models');
 const { gridToLatLon, haversineDistanceMiles, bearing } = require('./lib/grid');
 const { freqToBand } = require('./lib/bands');
 const { loadCtyDat, resolveCallsign, getAllEntities } = require('./lib/cty');
@@ -182,6 +189,9 @@ function detectRigType() {
   if (target.type === 'rigctld' || target.type === 'rigctldnet') return 'rigctld';
   if (target.type === 'tcp') return 'flex'; // TCP CAT ports 5002-5005 are always FlexRadio
   if (target.type === 'serial') {
+    // New rig layer: check model brand directly (no runtime FA digit detection needed)
+    if (cat && cat.model && cat.model.brand === 'Yaesu') return 'yaesu';
+    // Old rig layer fallback: runtime Yaesu detection via FA digit count
     if (cat && cat._isYaesu && cat._isYaesu()) return 'yaesu';
     return 'kenwood';
   }
@@ -526,14 +536,38 @@ function sendRotorBearing(azimuth) {
 
 async function connectCat() {
   if (cat) {
-    cat.removeAllListeners(); // prevent stale close events from sending false status
+    cat.removeAllListeners();
     cat.disconnect();
   }
   killRigctld();
   const target = settings.catTarget;
+  if (!target) return;
 
-  if (target && target.type === 'rigctld') {
-    // Spawn rigctld process, then connect RigctldClient to it
+  // --- New rig abstraction layer ---
+  // Uses RigController (transport + codec + model) instead of ad-hoc wiring.
+  // The model drives ALL protocol differences — no if(_isYaesu) branches.
+  const rigModel = getActiveRigModel();
+
+  // FlexRadio uses SmartSDR, not the rig controller
+  if (target.type === 'tcp') {
+    // Flex: use old CatClient for basic CAT (SmartSDR handles the real work)
+    cat = new CatClient();
+    cat._debug = true;
+    cat.on('log', sendCatLog);
+    cat.on('status', sendCatStatus);
+    cat.on('frequency', sendCatFrequency);
+    cat.on('mode', sendCatMode);
+    cat.on('power', sendCatPower);
+    cat.on('nb', sendCatNb);
+    cat.connect(target);
+    return;
+  }
+
+  // Build transport + codec based on target type and model
+  let transport, codec;
+
+  if (target.type === 'rigctld') {
+    // Spawn rigctld process first
     try {
       await spawnRigctld(target);
     } catch (err) {
@@ -541,19 +575,18 @@ async function connectCat() {
       sendCatStatus({ connected: false, target, error: err.message });
       return;
     }
-    cat = new RigctldClient();
+    const rigctldPort = target.rigctldPort || 4532;
+    transport = new TcpTransport();
+    const model = rigModel || { brand: 'Hamlib', protocol: 'rigctld', caps: {}, cw: {} };
+    // Override tune quirks for rigctld: always use M,F,M,F sandwich regardless of
+    // the model's native protocol. The sandwich handles band-recall mode reversion
+    // AND CW pitch offset (confirmed needed by W3AVP on FT-710 via rigctld).
+    model.tune = model.tune || { modeBeforeFreq: true, modeAfterFreq: true, freqAfterMode: true, alwaysResendMode: false, daCommand: false };
+    codec = new RigctldCodec(model, (data) => transport.write(data));
+    cat = new RigController(model, transport, codec);
     cat._debug = true;
     cat.on('log', sendCatLog);
-    // Enable raw Yaesu passthrough if model is a Yaesu rig (works around incomplete hamlib backends)
-    const rigModel = getActiveRigModel();
-    if (rigModel && rigModel.brand === 'Yaesu') {
-      cat.setYaesuPassthrough(true);
-      if (rigModel.atuCmd) cat._atuCmd = rigModel.atuCmd;
-      if (rigModel.minPower != null) cat._minPower = rigModel.minPower;
-      if (rigModel.maxPower != null) cat._maxPower = rigModel.maxPower;
-    }
     cat.on('status', (s) => {
-      // Enrich disconnect events with last rigctld stderr
       if (!s.connected && rigctldStderr) {
         const lastLine = rigctldStderr.trim().split('\n').pop();
         if (lastLine) s.error = lastLine;
@@ -564,22 +597,18 @@ async function connectCat() {
     cat.on('frequency', sendCatFrequency);
     cat.on('mode', sendCatMode);
     cat.on('nb', sendCatNb);
-    const rigctldPort = target.rigctldPort || 4532;
     sendCatLog(`Connecting to rigctld on 127.0.0.1:${rigctldPort}`);
-    cat.connect({ type: 'rigctld', host: '127.0.0.1', port: rigctldPort });
-  } else if (target && target.type === 'rigctldnet') {
-    // Connect directly to remote rigctld server — no local spawn
-    cat = new RigctldClient();
+    transport.connect({ host: '127.0.0.1', port: rigctldPort });
+
+  } else if (target.type === 'rigctldnet') {
+    transport = new TcpTransport();
+    const model = rigModel || { brand: 'Hamlib', protocol: 'rigctld', caps: {}, cw: {} };
+    // Same rigctld sandwich override as above
+    model.tune = model.tune || { modeBeforeFreq: true, modeAfterFreq: true, freqAfterMode: true, alwaysResendMode: false, daCommand: false };
+    codec = new RigctldCodec(model, (data) => transport.write(data));
+    cat = new RigController(model, transport, codec);
     cat._debug = true;
     cat.on('log', sendCatLog);
-    // Enable raw Yaesu passthrough if model is a Yaesu rig
-    const rigModelNet = getActiveRigModel();
-    if (rigModelNet && rigModelNet.brand === 'Yaesu') {
-      cat.setYaesuPassthrough(true);
-      if (rigModelNet.atuCmd) cat._atuCmd = rigModelNet.atuCmd;
-      if (rigModelNet.minPower != null) cat._minPower = rigModelNet.minPower;
-      if (rigModelNet.maxPower != null) cat._maxPower = rigModelNet.maxPower;
-    }
     cat.on('status', (s) => {
       sendCatLog(`rigctld-net status: connected=${s.connected}${s.error ? ' error=' + s.error : ''}`);
       sendCatStatus(s);
@@ -590,43 +619,40 @@ async function connectCat() {
     const host = target.host || '127.0.0.1';
     const port = target.port || 4532;
     sendCatLog(`Connecting to remote rigctld on ${host}:${port}`);
-    cat.connect({ type: 'rigctldnet', host, port });
-  } else if (target && target.type === 'icom') {
-    // Icom CI-V binary protocol over USB serial
-    cat = new CivClient();
+    transport.connect({ host, port });
+
+  } else if (target.type === 'icom') {
+    transport = new SerialTransport();
+    const model = rigModel || { brand: 'Icom', protocol: 'civ', civAddr: 0x94, caps: {}, cw: {} };
+    model.tune = getTuneQuirks(model);
+    codec = new CivCodec(model, (data) => transport.write(data));
+    cat = new RigController(model, transport, codec);
     cat._debug = true;
-    cat.on('log', sendCatLog);
-    cat.on('status', sendCatStatus);
-    cat.on('frequency', sendCatFrequency);
-    cat.on('mode', sendCatMode);
-    cat.on('power', sendCatPower);
-    cat.connect(target);
-  } else {
-    cat = new CatClient();
-    cat._debug = true;
-    // Set model-specific CW text mode (FTDX101D uses KM+KY6 write-then-playback)
-    const serialModel = getActiveRigModel();
-    if (serialModel && serialModel.cw && serialModel.cw.kyMode) {
-      cat._kyMode = serialModel.cw.kyMode;
-    }
-    if (serialModel && serialModel.cw && serialModel.cw.kyParam != null) {
-      cat._kyParam = serialModel.cw.kyParam;
-    }
-    if (serialModel && serialModel.digiMd != null) {
-      cat._digiMd = serialModel.digiMd;
-    }
-    if (serialModel && serialModel.minPower != null) cat._minPower = serialModel.minPower;
-    if (serialModel && serialModel.maxPower != null) cat._maxPower = serialModel.maxPower;
-    if (serialModel && serialModel.atuCmd) cat._atuCmd = serialModel.atuCmd;
     cat.on('log', sendCatLog);
     cat.on('status', sendCatStatus);
     cat.on('frequency', sendCatFrequency);
     cat.on('mode', sendCatMode);
     cat.on('power', sendCatPower);
     cat.on('nb', sendCatNb);
-    if (target) {
-      cat.connect(target);
-    }
+    sendCatLog(`Connecting to Icom on ${target.path}`);
+    transport.connect({ path: target.path, baudRate: target.baudRate || 19200, dtrOff: target.dtrOff });
+
+  } else {
+    // Kenwood/Yaesu serial
+    transport = new SerialTransport();
+    const model = rigModel || { brand: 'Kenwood', protocol: 'kenwood', caps: {}, cw: {} };
+    model.tune = getTuneQuirks(model);
+    codec = new KenwoodCodec(model, (data) => transport.write(data));
+    cat = new RigController(model, transport, codec);
+    cat._debug = true;
+    cat.on('log', sendCatLog);
+    cat.on('status', sendCatStatus);
+    cat.on('frequency', sendCatFrequency);
+    cat.on('mode', sendCatMode);
+    cat.on('power', sendCatPower);
+    cat.on('nb', sendCatNb);
+    sendCatLog(`Connecting to ${model.brand || 'radio'} on ${target.path}`);
+    transport.connect({ path: target.path, baudRate: target.baudRate || 9600, dtrOff: target.dtrOff, connectDelay: model.connectDelay });
   }
 }
 
@@ -2619,7 +2645,7 @@ function connectRemote() {
     const rigType = detectRigType();
     const rigModel = getActiveRigModel();
     const cwCaps = rigModel?.cw || {};
-    if (cat && cat.connected && (rigType === 'kenwood' || rigType === 'yaesu' || rigType === 'icom')) {
+    if (cat && cat.connected && rigType !== 'flex') {
       // Pause polling so commands don't interleave with CW keying
       if (down) {
         if (_cwPollResumeTimer) { clearTimeout(_cwPollResumeTimer); _cwPollResumeTimer = null; }
