@@ -3109,6 +3109,11 @@ function connectRemote() {
           smartSdr.setSliceFilter(0, lo, hi);
         } else if (cat && cat.connected) cat.setFilterWidth(width);
         _currentFilterWidth = width;
+        // Update per-mode setting so rig panel changes persist across tunes
+        const cm = (_currentMode || '').toUpperCase();
+        if (cm === 'CW') settings.cwFilterWidth = width;
+        else if (cm === 'USB' || cm === 'LSB' || cm === 'SSB') settings.ssbFilterWidth = width;
+        else if (cm === 'DIGU' || cm === 'DIGL' || cm === 'PKTUSB' || cm === 'PKTLSB' || cm === 'FT8' || cm === 'FT4') settings.digitalFilterWidth = width;
         broadcastRigState();
         break;
       }
@@ -7106,6 +7111,11 @@ app.whenReady().then(() => {
           cat.setFilterWidth(width);
         }
         _currentFilterWidth = width;
+        // Update the per-mode setting so rig panel changes persist across tunes
+        const cm = (_currentMode || '').toUpperCase();
+        if (cm === 'CW') settings.cwFilterWidth = width;
+        else if (cm === 'USB' || cm === 'LSB' || cm === 'SSB') settings.ssbFilterWidth = width;
+        else if (cm === 'DIGU' || cm === 'DIGL' || cm === 'PKTUSB' || cm === 'PKTLSB' || cm === 'FT8' || cm === 'FT4') settings.digitalFilterWidth = width;
         broadcastRigState();
         break;
       }
