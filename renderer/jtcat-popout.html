@@ -51,6 +51,8 @@
     .jp-qso-tracker.hidden { display: none; }
     .jp-qso-header { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
     .jp-qso-label { font-weight: 600; font-size: 13px; color: var(--text-primary); }
+    .jp-qso-skip { background: none; border: 1px solid #4fc3f7; color: #4fc3f7; border-radius: 4px; padding: 2px 8px; font-size: 11px; cursor: pointer; line-height: 1; font-weight: 600; }
+    .jp-qso-skip:hover { background: #4fc3f7; color: #000; }
     .jp-qso-cancel { margin-left: auto; background: none; border: 1px solid #e94560; color: #e94560; border-radius: 4px; padding: 2px 8px; font-size: 14px; cursor: pointer; line-height: 1; }
     .jp-qso-cancel:hover { background: #e94560; color: #fff; }
     .jp-qso-steps { display: flex; flex-wrap: wrap; gap: 2px; align-items: center; font-family: monospace; font-size: 11px; }
@@ -161,6 +163,7 @@
   <div id="jp-qso-tracker" class="jp-qso-tracker hidden">
     <div class="jp-qso-header">
       <span id="jp-qso-label" class="jp-qso-label"></span>
+      <button id="jp-qso-skip" class="jp-qso-skip" title="Skip to next message">Skip &raquo;</button>
       <button id="jp-qso-cancel" class="jp-qso-cancel" title="Cancel QSO">&times;</button>
     </div>
     <div id="jp-qso-steps" class="jp-qso-steps"></div>

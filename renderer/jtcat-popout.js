@@ -54,6 +54,7 @@
   var qsoLabel = document.getElementById('jp-qso-label');
   var qsoSteps = document.getElementById('jp-qso-steps');
   var qsoCancelBtn = document.getElementById('jp-qso-cancel');
+  var qsoSkipBtn = document.getElementById('jp-qso-skip');
 
   // --- Map ---
   var map = null;
@@ -300,6 +301,8 @@
       return;
     }
     qsoTracker.classList.remove('hidden');
+    // Show Skip button when QSO is active (not done)
+    qsoSkipBtn.style.display = qsoState.phase !== 'done' ? '' : 'none';
     var q = qsoState;
     var phases = q.mode === 'cq' ? QSO_PHASES_CQ : QSO_PHASES_REPLY;
 
@@ -709,6 +712,10 @@
 
   qsoCancelBtn.addEventListener('click', function() {
     window.api.jtcatCancelQso();
+  });
+
+  qsoSkipBtn.addEventListener('click', function() {
+    window.api.jtcatSkipPhase();
   });
 
   // Auto-CQ response

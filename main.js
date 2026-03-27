@@ -2027,7 +2027,7 @@ function startJtcat(mode) {
   ft8Engine = new Ft8Engine();
   ft8Engine.setMode(mode || 'FT8');
 
-  ft8Engine.on('decode', (data) => {
+  ft8Engine.on('decode', async (data) => {
     if (win && !win.isDestroyed()) {
       win.webContents.send('jtcat-decode', data);
     }
@@ -2159,10 +2159,13 @@ function startJtcat(mode) {
 
           if (jtcatAutoCqOwner === 'remote') {
             remoteJtcatQso = qso;
-            remoteJtcatSetTxMsg(qso.txMsg);
+            await remoteJtcatSetTxMsg(qso.txMsg);
+            if (ft8Engine) ft8Engine.tryImmediateTx();
+            remoteJtcatBroadcastQso();
           } else {
             popoutJtcatQso = qso;
-            if (ft8Engine) ft8Engine.setTxMessage(qso.txMsg);
+            if (ft8Engine) await ft8Engine.setTxMessage(qso.txMsg);
+            if (ft8Engine) ft8Engine.tryImmediateTx();
             popoutBroadcastQso();
           }
           broadcastAutoCqState();
@@ -6764,6 +6767,43 @@ app.whenReady().then(() => {
     if (mode === 'off') jtcatAutoCqWorkedSession.clear();
     broadcastAutoCqState();
     console.log('[JTCAT Popout] Auto-CQ mode:', mode);
+  });
+
+  ipcMain.on('jtcat-popout-skip-phase', () => {
+    if (!popoutJtcatQso || popoutJtcatQso.phase === 'done' || popoutJtcatQso.phase === 'idle') return;
+    const q = popoutJtcatQso;
+    const myCall = q.myCall;
+    if (q.mode === 'cq') {
+      if (q.phase === 'cq-report') {
+        q.txMsg = q.call + ' ' + myCall + ' RR73';
+        q.phase = 'cq-rr73';
+      } else if (q.phase === 'cq-rr73') {
+        q.phase = 'done';
+        ft8Engine._txEnabled = false;
+        ft8Engine.setTxMessage('');
+        ft8Engine.setTxSlot('auto');
+      }
+    } else {
+      if (q.phase === 'reply') {
+        const rpt = q.sentReport || '-10';
+        q.txMsg = q.call + ' ' + myCall + ' R' + rpt;
+        q.phase = 'r+report';
+      } else if (q.phase === 'r+report') {
+        q.txMsg = q.call + ' ' + myCall + ' RR73';
+        q.phase = '73';
+      } else if (q.phase === '73') {
+        q.phase = 'done';
+        ft8Engine._txEnabled = false;
+        ft8Engine.setTxMessage('');
+        ft8Engine.setTxSlot('auto');
+      }
+    }
+    q.txRetries = 0;
+    if (q.txMsg && q.phase !== 'done') {
+      if (ft8Engine) ft8Engine.setTxMessage(q.txMsg);
+    }
+    popoutBroadcastQso();
+    console.log('[JTCAT Popout] Skip to phase:', q.phase, '— TX:', q.txMsg);
   });
 
   ipcMain.on('jtcat-popout-cancel-qso', () => {
