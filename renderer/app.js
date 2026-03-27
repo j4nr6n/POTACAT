@@ -2943,9 +2943,13 @@ async function populateRemoteURLs() {
   try {
     const ips = await window.api.getLocalIPs();
     const port = setRemotePort.value || 7300;
-    remoteUrlDisplay.innerHTML = ips.map(ip =>
-      `<div>${ip.tailscale ? '<strong style="color:#4ecca3;">(Tailscale)</strong> ' : ''}https://${ip.address}:${port}</div>`
-    ).join('');
+    remoteUrlDisplay.innerHTML = ips.map(ip => {
+      if (ip.tailscale && ip.tailscaleHostname) {
+        return `<div><strong style="color:#4ecca3;">Tailscale:</strong> <span style="cursor:pointer;text-decoration:underline;" title="Click to copy" onclick="navigator.clipboard.writeText('https://${ip.tailscaleHostname}:${port}')">https://${ip.tailscaleHostname}:${port}</span> <span style="font-size:10px;color:#888;">(click to copy)</span></div>`
+          + `<div style="color:#888;font-size:11px;margin-left:12px;">IP: https://${ip.address}:${port}</div>`;
+      }
+      return `<div>${ip.tailscale ? '<strong style="color:#4ecca3;">(Tailscale)</strong> ' : ''}https://${ip.address}:${port}</div>`;
+    }).join('');
   } catch {}
 }
 
