@@ -1470,6 +1470,17 @@ async function saveQsoRecord(qsoData) {
     }
   }
 
+  // Enrich COMMENT with CW club membership if the station was spotted via CW Spots
+  if (cwSpots.length > 0 && qsoData.callsign) {
+    const call = qsoData.callsign.toUpperCase();
+    const clubs = [...new Set(cwSpots.filter(s => s.callsign === call && s.cwClub && s.cwClub !== 'CW').map(s => s.cwClub))];
+    if (clubs.length > 0) {
+      const clubTag = `[${clubs.join(' ')}]`;
+      const base = (qsoData.comment || '').trim();
+      qsoData.comment = base ? `${base} ${clubTag}` : clubTag;
+    }
+  }
+
   const logPath = settings.adifLogPath || path.join(app.getPath('userData'), 'potacat_qso_log.adi');
   appendQso(logPath, qsoData);
 
