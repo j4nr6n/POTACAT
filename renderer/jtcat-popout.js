@@ -31,6 +31,11 @@
     myCallsign = (s.myCallsign || '').toUpperCase();
     myGrid = (s.grid || '').toUpperCase().substring(0, 4);
     updateMapHome();
+    // Center map on home QTH if grid is available
+    if (myGrid && map) {
+      var pos = gridToLatLon(myGrid);
+      if (pos) map.setView([pos.lat, pos.lon], 4);
+    }
     // Register own station so QSO arcs can be drawn to/from us
     if (myCallsign && myGrid) registerStation(myCallsign, myGrid);
   });
@@ -976,20 +981,18 @@
       }
       jpWfCtx.putImageData(lineData, 0, 0);
 
-      // RX marker (green) — draw first so TX overlays if same position
+      // RX marker (green) — always visible, wider so green peeks out when TX overlaps
       var rxX = Math.round(jpRxFreqHz / 3000 * w);
-      if (Math.abs(rxX - Math.round(jpTxFreqHz / 3000 * w)) > 3) {
-        jpWfCtx.fillStyle = '#000';
-        jpWfCtx.fillRect(rxX - 2, 0, 5, h);
-        jpWfCtx.fillStyle = '#4ecca3';
-        jpWfCtx.fillRect(rxX - 1, 0, 3, h);
-      }
-      // TX marker (red)
       var txX = Math.round(jpTxFreqHz / 3000 * w);
       jpWfCtx.fillStyle = '#000';
-      jpWfCtx.fillRect(txX - 2, 0, 5, h);
-      jpWfCtx.fillStyle = '#ff2222';
+      jpWfCtx.fillRect(rxX - 3, 0, 7, h);
+      jpWfCtx.fillStyle = '#4ecca3';
+      jpWfCtx.fillRect(rxX - 2, 0, 5, h);
+      // TX marker (red) — narrower, draws on top. When same position, green edges visible
+      jpWfCtx.fillStyle = '#000';
       jpWfCtx.fillRect(txX - 1, 0, 3, h);
+      jpWfCtx.fillStyle = '#ff2222';
+      jpWfCtx.fillRect(txX, 0, 1, h);
 
       // Auto-detect quietest TX frequency (~every 0.5s)
       popoutQuietFreqFrame++;
