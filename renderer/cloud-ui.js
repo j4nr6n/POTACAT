@@ -251,6 +251,14 @@
     });
   }
 
+  const clearTokensBtn = document.getElementById('cloud-clear-tokens');
+  if (clearTokensBtn) {
+    clearTokensBtn.addEventListener('click', async () => {
+      await window.api.cloudLogout();
+      showLogin(false);
+    });
+  }
+
   const supporterLink = document.getElementById('cloud-supporter-link');
   if (supporterLink) {
     supporterLink.addEventListener('click', (e) => {
