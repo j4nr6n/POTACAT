@@ -136,7 +136,17 @@
         return;
       }
 
-      showAccount(status.user, status.subscription);
+      // Use subscription endpoint if available, fall back to user object from login
+      const sub = status.subscription || {
+        status: status.user?.subscriptionStatus || 'inactive',
+        trialActive: status.user?.trialExpiresAt ? new Date(status.user.trialExpiresAt) > new Date() : false,
+        trialDaysLeft: status.user?.trialExpiresAt ? Math.ceil((new Date(status.user.trialExpiresAt) - new Date()) / 86400000) : 0,
+        trialExpiresAt: status.user?.trialExpiresAt,
+        callsign: status.user?.callsign,
+      };
+      if (sub.status === 'inactive' && sub.trialActive) sub.status = 'trial';
+
+      showAccount(status.user, sub);
 
       if (status.sync) {
         qsoCountSpan.textContent = status.sync.totalQsos ?? '--';
