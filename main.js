@@ -7117,12 +7117,14 @@ app.whenReady().then(() => {
         break;
       }
       case 'atu-tune': {
+        const atuOn = !_currentAtuState; // toggle
         if (flexSdr()) {
-          smartSdr.setAtu(true); // 'atu start'
+          smartSdr.setAtu(atuOn);
         } else if (cat && cat.connected) {
-          cat.startTune();
+          if (atuOn) cat.startTune();
+          else cat.stopTune();
         }
-        _currentAtuState = true;
+        _currentAtuState = atuOn;
         broadcastRigState();
         break;
       }
