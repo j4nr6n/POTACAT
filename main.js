@@ -2820,8 +2820,9 @@ function connectRemote() {
   // CW text macros/freeform from phone — route to radio
   remoteServer.on('cw-text', ({ text }) => {
     if (!text) return;
-    // Substitute {MYCALL} with the user's callsign
-    const expanded = text.replace(/\{MYCALL\}/gi, settings.myCallsign || '');
+    // Substitute macros
+    const expanded = text.replace(/\{MYCALL\}/gi, settings.myCallsign || '')
+      .replace(/\{mycallsign\}/gi, settings.myCallsign || '');
     console.log(`[Echo CAT] CW text: ${expanded}`);
     // FlexRadio: use SmartSDR `cw send` command
     if (detectRigType() === 'flex' && smartSdr && smartSdr.connected) {

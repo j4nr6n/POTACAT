@@ -98,6 +98,8 @@
   let currentFreqKhz = 0;
   let currentMode = '';
   let tunedFreqKhz = '';
+  let tunedCallsign = '';
+  let tunedOpName = '';
   let currentNb = false;
   let currentAtu = false;
   let currentVfo = 'A';
@@ -1218,6 +1220,14 @@
     }
     if (mode) modeBadge.textContent = mode;
     tunedFreqKhz = freqKhz;
+    tunedCallsign = callsign;
+    // Look up operator name from QRZ for CW macro {op_firstname}
+    tunedOpName = '';
+    if (callsign && window.api.qrzLookup) {
+      window.api.qrzLookup(callsign.toUpperCase().split('/')[0]).then(function(data) {
+        if (data) tunedOpName = data.nickname || data.fname || '';
+      }).catch(function() {});
+    }
     spotList.querySelectorAll('.spot-card.tuned').forEach(c => c.classList.remove('tuned'));
     card.classList.add('tuned');
 
@@ -4381,8 +4391,12 @@
 
   function sendCwText(text) {
     if (!text || !ws || ws.readyState !== WebSocket.OPEN) return;
-    ws.send(JSON.stringify({ type: 'cw-text', text: text }));
-    playCwTextSidetone(text);
+    // Expand macros: {op_firstname} → operator name or "OM", {call} → tuned callsign
+    var expanded = text
+      .replace(/\{op_firstname\}/gi, tunedOpName || 'OM')
+      .replace(/\{call\}/gi, tunedCallsign || '');
+    ws.send(JSON.stringify({ type: 'cw-text', text: expanded }));
+    playCwTextSidetone(expanded);
   }
 
   // --- Macro buttons ---
