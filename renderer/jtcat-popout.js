@@ -770,6 +770,15 @@
   window.api.getSettings().then(function(s) {
     var lastFreq = s.jtcatLastBandFreq || 14074;
     var bandBtn = document.querySelector('.jtcat-band-btn[data-freq="' + lastFreq + '"]');
+    // If no exact match, find the band button closest to the requested frequency
+    if (!bandBtn) {
+      var bestBtn = null, bestDist = Infinity;
+      document.querySelectorAll('.jtcat-band-btn').forEach(function(btn) {
+        var d = Math.abs(parseInt(btn.dataset.freq, 10) - lastFreq);
+        if (d < bestDist) { bestDist = d; bestBtn = btn; }
+      });
+      bandBtn = bestBtn;
+    }
     if (!bandBtn) bandBtn = document.querySelector('.jtcat-band-btn[data-band="20m"]');
     if (bandBtn) selectBand(bandBtn, false);
     window.api.jtcatStart(modeSelect.value);

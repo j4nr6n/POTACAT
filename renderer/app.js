@@ -5550,6 +5550,9 @@ function render() {
         // Auto-open JTCAT popout for digital mode spots
         const dm = (s.mode || '').toUpperCase();
         if (dm === 'FT8' || dm === 'FT4' || dm === 'FT2') {
+          // Save the spot freq as JTCAT band so the popout opens on the right band
+          const spotFreqKhz = Math.round(parseFloat(s.frequency));
+          window.api.saveSettings({ jtcatLastBandFreq: spotFreqKhz });
           window.api.jtcatPopoutOpen();
         }
         render(); // highlight the clicked row immediately
